@@ -1,0 +1,122 @@
+{% extends "template_v2.html" %}
+{% block content %}
+<div class="container py-3">
+    <form action="{% url 'accept_request' request_item.request_id %}" method="post"
+          class="mx-auto p-4 bg-light rounded " style="max-width: 1000px;" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="d-flex justify-content-center">
+            <p class="fw-bold fs-2">Xét duyệt đề xuất côn trùng</p>
+        </div>
+        <div>
+            <hr>
+        </div>
+        <div class="row">
+            <!-- Cột trái: Hiển thị hình ảnh -->
+            <div class="col-md-4 text-center">
+                {% if request_item.thumbnail %}
+                <label class="form-label fw-bold">Hình ảnh</label>
+                <div>
+                    <img src="{{ MEDIA_URL }}{{ request_item.thumbnail }}" alt="Hình ảnh côn trùng"
+                         class="img-thumbnail rounded shadow mb-2" style="max-width: 100%; height: auto;">
+                </div>
+                <small class="text-muted d-block">{{ request_item.thumbnail }}</small>
+                {% endif %}
+            </div>
+
+            <!-- Cột phải: Thông tin côn trùng -->
+            <div class="col-md-8">
+                <div class="row">
+                    <div class="mb-3 col-md-6">
+                        <label for="insectEname" class="form-label">Tên khoa học</label>
+                        <input class="form-control" type="text" id="insectEname" name="insectEname" value="{{ request_item.ename }}" required>
+                    </div>
+                    <div class="mb-3 col-md-6">
+                        <label for="speciesName" class="form-label">Tên loài</label>
+                        <input class="form-control" type="text" id="speciesName" name="speciesName" value="{{ request_item.species_name }}" required>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="mb-3 col-md-6">
+                        <label for="insectName" class="form-label">Tên thường gọi</label>
+                        <input class="form-control" type="text" id="insectName" name="insectName" value="{{ request_item.name }}" required>
+                    </div>
+                    <div class="mb-3 col-md-6">
+                        <label for="insectVNName" class="form-label">Tên Tiếng Việt</label>
+                        <input class="form-control" type="text" id="insectVNName" name="insectVNName" value="{{ request_item.vi_name }}" required>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="insectGenus" class="form-label">Chi</label>
+                    <select class="form-select" id="insectGenus" name="insectGenus">
+                        {% for genus in genus_list %}
+                            <option value="{{ genus.genus_id }}">{{ genus.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Các trường textarea được đặt full width -->
+        <div class="mb-3">
+            <label for="behavior" class="form-label">Tập tính</label>
+            <textarea class="form-control" id="behavior" name="behavior" rows="2">{{ request_item.behavior }}</textarea>
+        </div>
+        <div class="mb-3">
+            <label for="morphologicFeature" class="form-label">Hình thái</label>
+            <textarea class="form-control" id="morphologicFeature" name="morphologicFeature" rows="2">{{ request_item.morphologic_feature }}</textarea>
+        </div>
+        <div class="mb-3">
+            <label for="distribution" class="form-label">Phân bố</label>
+            <textarea class="form-control" id="distribution" name="distribution" rows="2">{{ request_item.distribution }}</textarea>
+        </div>
+        <div class="mb-3">
+            <label for="characteristic" class="form-label">Đặc điểm sinh học</label>
+            <textarea class="form-control" id="characteristic" name="characteristic" rows="2">{{ request_item.characteristic }}</textarea>
+        </div>
+        <div class="mb-3">
+            <label for="protectionMethod" class="form-label">Biện pháp phòng trừ</label>
+            <textarea class="form-control" id="protectionMethod" name="protectionMethod" rows="2">{{ request_item.protection_method }}</textarea>
+        </div>
+
+        <div class="d-flex justify-content-center">
+            <button type="submit" name="action" value="reject" class="btn btn-danger m-2">Từ chối</button>
+            <button type="submit" name="action" value="accept" class="btn btn-success m-2">Chấp nhận</button>
+        </div>
+    </form>
+</div>
+
+
+{% if show_modal %}
+    <div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="successModalLabel">Xác thực thành công!</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    {% for message in messages %}
+                        <p>{{ message }}</p>
+                    {% endfor %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="redirectToVerify()">Đóng</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            var successModal = new bootstrap.Modal(document.getElementById("successModal"));
+            successModal.show();
+        });
+
+        function redirectToVerify() {
+            setTimeout(function () {
+                window.location.href = "{% url 'admin_verify' %}";
+            }, 500);  // Đợi 500ms để modal đóng rồi mới chuyển trang
+        }
+    </script>
+{% endif %}
+{% endblock %}

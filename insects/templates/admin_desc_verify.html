@@ -1,0 +1,75 @@
+{% extends "template_v2.html" %}
+{% load custom_filters %} 
+
+{% block content %}
+<div class="container py-3">
+    <div class="d-flex justify-content-center">
+        <p class="fw-bold fs-2">Chấp nhận đóng góp mô tả ảnh côn trùng</p>
+    </div>
+    <div>
+        <hr>
+    </div>
+    <table class="table table-bordered table-striped">
+        <thead class="table-dark">
+            <tr align="center">
+                <th scope="col">#</th>
+                <th scope="col">Ảnh côn trùng</th>
+                <th scope="col">Tên người dùng</th>
+                <th scope="col">Ngày gửi</th>
+                <th scope="col">Trạng thái</th>
+                <th scope="col">Hành động</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% if requests %}
+            {% for request in requests %}
+            <tr align="center">
+                <td>{{ request.index }}</td>
+                <td>
+                    <img src="{{MEDIA_URL}}{{ request.img }}" class="img-thumbnail" alt="Ảnh côn trùng" style="width: 100px; height: auto;">
+                </td>
+                <td>
+                    {% if request.user.first_name or request.user.last_name %}
+                        {{ request.user.last_name }} {{ request.user.first_name }}
+                    {% else %}
+                        {{ request.user.username }}
+                    {% endif %}
+                </td>
+                <td>{{ request.created_at|date:"Y-m-d H:i:s" }}</td>
+                <td>
+                    {% if request.status == 'pending' %}
+                        <span class="badge bg-warning text-dark">
+                            {{ request.status|format_status }}
+                        </span>
+                    {% elif request.status == 'verified' %}
+                        <span class="badge bg-info text-dark">
+                            {{ request.status|format_status }}
+                        </span>
+                    {% elif request.status == 'accepted' %}
+                        <span class="badge bg-success">
+                            {{ request.status|format_status }}
+                        </span>
+                    {% elif request.status == 'rejected' %}
+                        <span class="badge bg-danger">
+                            {{ request.status|format_status }}
+                        </span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{% url 'accept_desc_request' request.request_desc_id %}" class="btn btn-outline-success d-inline-flex align-items-center justify-content-center">
+                        <i class="bi bi-clipboard-check"></i>
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        {%else%}
+            <tr>
+                <td colspan="6" style="text-align: center;">
+                    Danh sách trống...
+                </td>
+            </tr>
+        {%endif%}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+# /venv/
+# /media/crawler/
+# /media/images/
+# /media/tmp/
+# /media/add_desc_image/
+# /media/images_detect_15k/
+# /insects/migrations/
+# /insect_dataset/.env
+# /insect_dataset/settings.py/
+# /.idea/misc.xml
+# /.idea/
+# **/__pycache__/
+# *.pyc
+# __pycache__/
+
+
+
+# ============================
+# ACTIVE .gitignore (current)
+# ============================
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Environment variables
+.env
+**/.env
+
+# Django
+media/
+db.sqlite3
+staticfiles/
+
+# Django migrations (keep, only ignore cache)
+**/migrations/__pycache__/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

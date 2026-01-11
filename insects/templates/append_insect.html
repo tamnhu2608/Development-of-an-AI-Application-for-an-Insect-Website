@@ -1,0 +1,215 @@
+{% extends "template_v2.html" %}
+{% block content %}
+{% load custom_filters %}
+<div class="container py-3">
+    <nav class="mb-3">
+        <div class="nav nav-tabs" id="nav-tab" role="tablist">
+            <button class="nav-link active" id="nav-contribInsect-tab" data-bs-toggle="tab" data-bs-target="#nav-contribInsect" type="button" role="tab" aria-controls="nav-contribInsect" aria-selected="true">Đề xuất</button>
+            <button class="nav-link" id="nav-history-tab" data-bs-toggle="tab" data-bs-target="#nav-history" type="button" role="tab" aria-controls="nav-history" aria-selected="false">Lịch sử</button>
+        </div>
+    </nav>
+    <div class="tab-content mb-3" id="nav-tabContent">
+        <!-- ============================================Đề xuất========================================== -->
+        <div class="tab-pane fade show active" id="nav-contribInsect" role="tabpanel" aria-labelledby="nav-contribInsect-tab" tabindex="0">
+            <!-- Success Modal -->
+            <div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="successModalLabel">Thông báo</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                         <p class="fw-bold fs-2">
+                             Đề nghị thêm thành công!
+                         </p>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            <div class="container d-flex justify-content-center align-items-center">
+                <form action="{% url 'append_insect_handler' %}" method="post" class="row g-3 justify-content-center col-12 col-md-7 p-4" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <legend class="text-center text-black"><p class="fw-bold fs-2">Đề xuất côn trùng</p></legend>
+
+                    <div class="col-md-6">
+                        <label for="insectEname" class="form-label fw-semibold">Tên khoa học</label>
+                        <input class="form-control" type="text" id="insectEname" name="insectEname" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="insectSpecies" class="form-label fw-semibold">Tên loài</label>
+                        <input class="form-control" type="text" id="insectSpecies" name="insectSpecies" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="insectName" class="form-label fw-semibold">Tên thường gọi</label>
+                        <input class="form-control" type="text" id="insectName" name="insectName" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="insectVNName" class="form-label fw-semibold">Tên Tiếng Việt</label>
+                        <input class="form-control" type="text" id="insectVNName" name="insectVNName" required>
+                    </div>
+                    <div class="col-md-12">
+                        <label for="insectGenus" class="form-label fw-semibold">Chi</label>
+                        <select class="form-select" id="insectGenus" name="insectGenus">
+                            {% for genus in genus_list %}
+                                <option value="{{ genus.genus_id }}">{{ genus.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-12">
+                        <label for="behavior" class="form-label fw-semibold">Tập tính</label>
+                        <textarea class="form-control" id="behavior" name="behavior" required></textarea>
+                    </div>
+                    <div class="col-md-12">
+                        <label for="characteristic" class="form-label fw-semibold">Đặc điểm sinh học</label>
+                        <textarea class="form-control" id="characteristic" name="characteristic" rows="2" required></textarea>
+                    </div>
+                    <div class="col-md-12">
+                        <label for="distribution" class="form-label fw-semibold">Phân bố</label>
+                        <textarea class="form-control" id="distribution" name="distribution" rows="2" required></textarea>
+                    </div>
+                    <div class="col-md-12">
+                        <label for="feature" class="form-label fw-semibold">Hình thái</label>
+                        <textarea class="form-control" id="feature" name="feature" rows="2" required></textarea>
+                    </div>
+                    <div class="col-md-12">
+                        <label for="method" class="form-label fw-semibold">Biện pháp phòng ngừa</label>
+                        <textarea class="form-control" id="method" name="method" rows="2" required></textarea>
+                    </div>
+
+                    <div class="col-md-12">
+                        <label for="thumbnail" class="form-label fw-semibold">Thumbnail</label>
+                        <input class="form-control" type="file" id="thumbnail" name="thumbnail">
+                    </div>
+
+                    <div class="d-grid mt-3">
+                        <button type="submit" class="btn btn-primary btn-lg shadow-sm">Tải lên</button>
+                    </div>
+                </form>
+            </div>
+
+        </div>
+        <!--        ============================================Lịch sử==========================================-->
+        <div class="tab-pane fade" id="nav-history" role="tabpanel" aria-labelledby="nav-history-tab" tabindex="1">
+            <legend class="text-center text-black fw-bold mt-3"><p class="fw-bold fs-2">Lịch sử đề xuất côn trùng</p></legend>
+            <div class="table-responsive" style="max-height: 550px; overflow-y: auto;">
+                <table class="table table-bordered">
+                    <thead class="table-dark" style="position: sticky; top: 0; z-index: 10;">
+                    <tr align="center">
+                        <th>Thumbnail</th>
+                        <th>Tên khoa học</th>
+                        <th>Tên thường gọi</th>
+                        <th>Tên loài</th>
+                        <th>Tên Tiếng Anh</th>
+                        <th>Tên Tiếng Việt</th>
+                        <th>Chi</th>
+                        <th>Thời gian gửi</th>
+                        <th>Trạng thái</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                        {% if request_insect %}
+                    {% for request in request_insect %}
+                    <tr align="center">
+                        <td>
+                            <img src="{{ MEDIA_URL }}{{ request.thumbnail }}" class="img-thumbnail" width="100" alt="Hình ảnh">
+                        </td>
+                        <td>{{ request.ename }}</td>
+                        <td>{{ request.name }}</td>
+                        <td>{{ request.species_name }}</td>
+                        <td>{{ request.eng_name }}</td>
+                        <td>{{ request.vi_name }}</td>
+                        <td>{{ request.genus }}</td>
+                        <td>{{ request.created_at|date:"Y-m-d H:i:s" }}</td>
+                        <td>
+                            {% if request.status == 'pending' %}
+                                <span class="badge bg-warning text-dark">
+                                    {{ request.status|format_status }}
+                                </span>
+                            {% elif request.status == 'verified' %}
+                                <span class="badge bg-info text-dark">
+                                    {{ request.status|format_status }}
+                                </span>
+                            {% elif request.status == 'accepted' %}
+                                <span class="badge bg-success">
+                                    {{ request.status|format_status }}
+                                </span>
+                            {% elif request.status == 'rejected' %}
+                                <span class="badge bg-danger">
+                                    {{ request.status|format_status }}
+                                </span>
+                            {% endif %}
+
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <td colspan="8" class="text-center text-muted">Lịch sử trống...</td>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!--{% if success %}-->
+<!--<script>-->
+<!--document.addEventListener('DOMContentLoaded', function () {-->
+<!--    var successModal = new bootstrap.Modal(document.getElementById('successModal'), {-->
+<!--        keyboard: false-->
+<!--    });-->
+<!--    successModal.show();-->
+<!--});-->
+<!--</script>-->
+<!--{% endif %}-->
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Lấy tab đang lưu trong localStorage
+        let activeTab = localStorage.getItem("activeTab");
+
+        // Nếu có tab được lưu, kích hoạt nó
+        if (activeTab) {
+            // let tabElement = document.querySelector(`#${activeTab}`);
+
+            let cleanTabId = activeTab.replace(/['"#]/g, "");
+            let tabElement = document.getElementById(cleanTabId);
+
+            if (tabElement) {
+                new bootstrap.Tab(tabElement).show();
+            }
+        }
+
+        // Lưu tab khi người dùng bấm vào
+        document.querySelectorAll('.nav-link').forEach(tab => {
+            tab.addEventListener("click", function () {
+                localStorage.setItem("activeTab", this.id);
+            });
+        });
+    });
+</script>
+{% if success %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modalElement = document.getElementById('successModal');
+
+    if (modalElement) {
+        const successModal = new bootstrap.Modal(modalElement, {
+            keyboard: false
+        });
+        successModal.show();
+
+        modalElement.addEventListener('hidden.bs.modal', function () {
+            location.reload();
+        });
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

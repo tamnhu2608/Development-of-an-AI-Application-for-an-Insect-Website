@@ -1,0 +1,175 @@
+{% extends "template_v2.html" %}
+{% load group_filters %}
+{% block content %}
+<div class="container py-3 d-flex justify-content-center align-items-center">
+    <!-- Form tải lên hình ảnh -->
+    <form action="{% url 'detect_insect' %}" method="post" enctype="multipart/form-data" id="searchForm">
+        {% csrf_token %}
+        <legend class="text-center text-black fw-bold mt-3">
+               <p class="fw-bold fs-2">Nhận dạng côn trùng</p>
+        </legend>
+        <div class="mb-3">
+            <label for="insectImage" class="form-label">Chọn hình ảnh</label>
+            <input class="form-control" type="file" id="insectImage" name="insectImage" accept="image/*">
+        </div>
+        <div class="d-grid">
+            <button type="submit" class="btn btn-primary pt-3 pb-3" id="submitButton">Tìm kiếm</button>
+        </div>
+    </form>
+</div>
+<div id="uploadSpinner" class="text-center mt-4" style="display: none;">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Đang xử lý...</span>
+    </div>
+    <p class="mt-2">Đang xử lý, vui lòng chờ...</p>
+</div>
+{% if messages %}
+     <div class="container mt-4">
+        {% for message in messages %}
+            <div class="alert alert-dismissible fade show" role="alert">
+                <div class="d-flex align-items-center">
+                    {% if message.tags == 'error' %}
+                        <div class="alert alert-waring w-100">
+                            {{ message }}
+                        </div>
+                    {% elif message.tags == 'success' %}
+                        <div class="alert alert-success w-100">
+                            {{ message }}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+<!-- Kết quả tìm kiếm -->
+{% if species_img %}
+    <div class="container mt-4">
+        <p class="fw-bold fs-2" align="center">Kết quả </p>
+        <div class="row text-center">
+            <!--Ảnh người dùng tải lên-->
+            <div class="col-md-6">
+                <p class="fw-bold fs-4">Ảnh tải lên</p>
+                <img src="{{ upload_image }}" class="img-fluid">
+            </div>
+            <!-- Ảnh khớp trong cơ sở dữ liệu -->
+            <div class="col-md-6">
+                <p class="fw-bold fs-4">Ảnh trong cơ sở dữ liệu</p>
+                <img src="{{ matched_image_path }}" class="img-fluid">
+            </div>
+        </div>
+
+        <!--Thông tin loài-->
+        <div class="text-center mt-4 mb-4">
+            <p class="fw-bold fs-2 ">Tên loài: {{ species_img.vi_name }} - {{ species_img.ename }}</p>
+                <a href="{% url 'detail' slug=species_img.slug %}" class="btn btn-outline-primary fs-5  ">
+                    <strong>Chi tiết</strong>
+                </a>
+        </div>
+    </div>
+{% elif output_image_path and species_detect %}
+    <!-- Hiển thị lỗi -->
+    <div class="container mt-4">
+        <div class="alert alert-warning">
+            {{ error }}
+        </div>
+        {% if output_image_path %}
+            <div class="text-center">
+                <p class="fw-bold fs-2" align="center"> Kết quả nhận dạng </p>
+                <img src="{{ output_image_path }}" class="img-fluid">
+            </div>
+            <br>
+            <p class="fw-bold fs-2" align="center">Thông tin nhận dạng</p>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th scope="col">STT</th>
+                        <th scope="col">Tên Khoa Học</th>
+                        <th scope="col">Tên Tiếng Việt</th>
+                        <th scope="col" colspan="2"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sp in species_detect %}
+                        <tr>
+                            <th scope="row">{{ forloop.counter }}</th>
+                            <td>{{sp.ename}}</td>
+                            <td>{{sp.vi_name}}</td>
+                            <td>
+                                <a href="{% url 'detail' slug=sp.slug %}" class="btn btn-outline-primary fs-6">
+                                        <strong>Chi tiết</strong>
+                                </a>
+                            </td>
+                            <td>
+                                {% if user.is_authenticated %}
+                                    {% if request.user|has_group:"Users" %}
+                                        <form action="{% url 'request_image' %}" method="post" class="contributeForm">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="species_id" value="{{ sp.insects_id }}">
+                                            <input type="hidden" name="image_path" value="{{ upload_image }}">
+                                            <button type="submit" class="btn btn-outline-success fs-6">Đóng góp</button>
+                                        </form>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </div>
+{% elif output_image_path %}
+    <div class="container mt-4">
+        <div class="alert alert-danger">
+            <strong>Không nhận diện được loài!</strong> Có thể đây không phải côn trùng hoặc là loài chưa được huấn luyện.
+        </div>
+
+        <!-- Ảnh nhận diện được vẽ bbox -->
+        <div class="text-center">
+            <h4>Ảnh đã nhận diện (với Bounding Box):</h4>
+            <img src="{{ output_image_path }}" class="img-fluid resized-image" alt="Ảnh không xác định">
+        </div>
+    </div>
+<!-- Hiển thị lỗi khác -->
+{% elif error %}
+    <div class="container mt-4">
+        <div class="alert alert-danger">
+            {{ error }}
+        </div>
+    </div>
+{% endif %}
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const form = document.getElementById("searchForm");
+        const spinner = document.getElementById("uploadSpinner");
+        const submitButton = document.getElementById("submitButton");
+
+        form.addEventListener("submit", function() {
+            spinner.style.display = "block";// Hiện spinner
+            submitButton.disabled = true; // Khóa nút
+            submitButton.textContent = "Đang tìm kiếm..."; // Đổi text cho nút
+        });
+
+        // Các nút đóng góp
+        const contributeForms = document.querySelectorAll(".contributeForm");
+        contributeForms.forEach(function (form) {
+            form.addEventListener("submit", function (e) {
+                // Tìm tất cả các nút "Đóng góp"
+                const allButtons = document.querySelectorAll(".contributeForm button[type='submit']");
+
+                // Khóa tất cả
+                allButtons.forEach(btn => {
+                    btn.disabled = true;
+                    btn.textContent = "Đóng góp";  // Reset lại tất cả trước
+                });
+
+                // Đổi nút đang được nhấn thành "Đang gửi..."
+                const currentBtn = form.querySelector("button[type='submit']");
+                if (currentBtn) {
+                    currentBtn.textContent = "Đang gửi...";
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

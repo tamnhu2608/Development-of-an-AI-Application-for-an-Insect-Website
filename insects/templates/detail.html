@@ -1,0 +1,261 @@
+{% extends "template_v2.html" %}
+{% load static %}
+{% load group_filters %}
+{% block content %}
+<div class="bg-light py-4">
+  <div class="container">
+    <div class="text-center mb-4">
+        <p class="fw-bold fs-2">{{ species.vi_name }} - {{ species.name }}</p>
+    </div>
+    <hr>
+
+    <div class="row">
+      <div class="col-md-3">
+        <div class="card shadow-sm mb-4">
+          <img src="{{ MEDIA_URL }}{{species.thumbnail}}" class="card-img-top img-thumbnail" alt="Thumbnail">
+          <div class="card-body">
+            <div class="d-grid mb-3">
+              <a href="{% url 'insect_damage_detail' species.insects_id %}"
+                class="btn btn-outline-success">
+                Cây trồng bị loài này gây hại
+              </a>
+            </div>
+            <p class="fw-semibold text-center mb-3">Tên khoa học: {{ species.ename }}</p>
+            <p class="fw-bold fs-5 text-center">Phân loại khoa học</p>
+            <hr>
+            <p class="mb-1"><strong>Giới:</strong> {{ species.genus.family.order.class_field.phylum.kingdom.ename }}</p>
+            <p class="mb-1"><strong>Ngành:</strong> {{ species.genus.family.order.class_field.phylum.ename }}</p>
+            <p class="mb-1"><strong>Lớp:</strong> {{ species.genus.family.order.class_field.ename }}</p>
+            <p class="mb-1"><strong>Bộ:</strong> {{ species.genus.family.order.ename }}</p>
+            <p class="mb-1"><strong>Họ:</strong> {{ species.genus.family.ename }}</p>
+            <p class="mb-1"><strong>Chi:</strong> {{ species.genus.ename }}</p>
+            <p class="mb-1"><strong>Loài:</strong> {{ species.ename }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-9">
+        <div class="mb-4">
+          <p class="fw-bold fs-4">Đặc điểm sinh học</p>
+          <hr>
+          <p class="ms-4">{{ species.characteristic|linebreaksbr }}</p>
+        </div>
+
+        <div class="mb-4">
+          <p class="fw-bold fs-4">Phân bố</p>
+          <hr>
+          <p class="ms-4">{{ species.distribution|linebreaksbr }}</p>
+        </div>
+
+        <div class="mb-4">
+          <p class="fw-bold fs-4">Hình thái</p>
+          <hr>
+          <p class="ms-4">{{ species.morphologic_feature|linebreaksbr }}</p>
+        </div>
+
+        <div class="mb-4">
+          <p class="fw-bold fs-4">Tập tính</p>
+          <hr>
+          <p class="ms-4">{{ species.behavior|linebreaksbr }}</p>
+        </div>
+
+        <div class="mb-4">
+          <p class="fw-bold fs-4">Biện pháp phòng ngừa</p>
+          <hr>
+          <p class="ms-4">{{ species.protection_method|linebreaksbr }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center mt-3">
+      <p class="fw-bold fs-2">Hình ảnh</p>
+      <hr>
+    </div>
+
+    <!-- Modal -->
+    <div id="imageModal" class="modal fade" tabindex="-1" role="dialog">
+      <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="imageModalLabel"></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body text-center">
+            <div id="modalContainer" class="position-relative mb-3">
+              <img id="modalImage" src="#" class="img-fluid">
+              <svg id="modalSvg" class="position-absolute top-0 start-0 w-100 h-100"></svg>
+            </div>
+            <hr>
+            <h6 class="fw-bold">Mô tả</h6>
+            <div id="imageDescription" class="mt-2"></div>
+          </div>
+
+          <div class="modal-footer align-items-center justify-content-center mb-2">
+                <div class="container d-flex align-items-center justify-content-center mb-2">
+                    {% if request.user.is_authenticated %}
+                        {% if request.user|has_group:"Users" %}
+                            <button id="detailsButton" class="btn btn-success mx-1" data-slug="">Chi tiết</button>
+                        {% endif %}
+                    {% endif %}
+                    <button id="downloadButton" class="btn btn-secondary mx-1">Tải ảnh</button>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row mt-4" id="image-container">
+      {% for image in images %}
+      <div class="col-sm-6 col-md-4 col-lg-3 mb-3 d-flex" data-desc="{{ image.desc }}">
+        <svg class="img-fluid border rounded shadow-sm" viewBox="0 0 {{ image.width }} {{ image.height }}"
+          data-insect-id="{{ image.insects.insects_id }}" data-insect-slug="{{ image.insects.slug }}">
+          <image href="{{ MEDIA_URL }}{{ image.url }}" height="100%" width="100%" />
+          {% for bbox in image.bboxes.all %}
+          {% with text_x=bbox.x|add:2 text_y=bbox.y|add:15 %}
+          <rect x="{{ bbox.x }}" y="{{ bbox.y }}" width="{{ bbox.width }}" height="{{ bbox.height }}"
+            style="stroke:red;stroke-width:2;fill-opacity:0" />
+          <text x="{{ text_x }}" y="{{ text_y }}" fill="red" class="bbox-text" font-size="18">
+            {{ image.insects.name }}
+          </text>
+          {% endwith %}
+          {% endfor %}
+        </svg>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="text-center mt-3">
+      <button id="load-more" class="btn btn-secondary">Tải thêm...</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    $(document).ready(function () {
+        let currentPage = 1;  // Biến lưu số trang hiện tại
+        const slug = "{{ species.slug }}";  // Lấy slug của loài hiện tại
+
+        $("#load-more").on("click", function () {
+            currentPage++;  // Tăng số trang lên
+            $.ajax({
+                url: `/detail/${slug}/load_more_images/?page=${currentPage}`,  // Gửi request đến view load_more_insect_images
+                type: "GET",
+                dataType: "json",
+                success: function (data) {
+                    if (data.length === 0) {
+                        $("#load-more").hide(); // Nếu hết ảnh thì ẩn nút
+                    }
+                    data.forEach(image => {
+                        let imgElement = `
+                            <div class="d-flex flex-wrap col-sm-6 col-md-4 col-lg-3 mb-3" data-desc="${image.desc || ''}">
+                                <svg class="img-fluid border rounded shadow-sm" viewBox="0 0 ${image.width} ${image.height}" data-insect-id="${image.insects.id}" data-insect-slug="${image.insects.slug}">
+                                    <image href="/media/${image.url}" height="100%" width="100%" />
+                                    ${image.bboxes.map(bbox => `
+                                        <rect x="${bbox.x}" y="${bbox.y}" width="${bbox.width}" height="${bbox.height}" style="stroke:red;stroke-width:2;fill-opacity:0" />
+                                        <text x="${bbox.x + 2}" y="${bbox.y + 15}" fill="red" class="bbox-text" font-size="18">${image.insects.ename}</text>
+                                    `).join('')}
+                                </svg>
+                            </div>
+                        `;
+                        $("#image-container").append(imgElement); // Thêm ảnh vào giao diện
+                    });
+                },
+                error: function (error) {
+                    console.error("Lỗi tải thêm ảnh:", error);
+                }
+            });
+        });
+    });
+    $(document).on('click', 'svg', function() {
+        var imageUrl = $(this).find('image').attr('href');
+        var bboxesData = [];
+        $(this).find('rect').each(function() {
+            var bbox = {};
+            bbox.x = $(this).attr('x');
+            bbox.y = $(this).attr('y');
+            bbox.width = $(this).attr('width');
+            bbox.height = $(this).attr('height');
+            bbox.text = $(this).next('text').text(); // Get the text associated with the bounding box
+            bboxesData.push(bbox);
+        });
+        var insectName = $(this).find('.bbox-text').text(); // Get the insect name from the SVG
+        var viewBox = $(this).attr('viewBox'); // Get the viewBox from the SVG
+        var insectId = $(this).data('insect-id'); // Get the insect ID from the SVG's data attributes
+        var insectSlug = $(this).data('insect-slug'); // Retrieve the slug from the data attribute
+        var imageDesc = $(this).closest('.d-flex').data('desc');
+        openModal(imageUrl, bboxesData, insectName, insectId, viewBox, insectSlug, imageDesc);
+    });
+
+    function openModal(imageUrl, bboxesData, insectName, insectId, viewBox, insectSlug, imageDesc) {
+        var id = insectId;
+        var slug = insectSlug
+        $('#imageModalLabel').text(insectName);
+        $('#modalImage').attr('src', imageUrl);
+        $('#modalSvg').attr('viewBox', viewBox);
+        $('#modalSvg').empty();
+
+        $('#detailsButton').attr('data-slug', insectSlug);
+        <!--        $('#3dButton').attr('data-slug', insectSlug);-->
+        $('#imageModal').modal('show');
+
+        $('#imageDescription').text((imageDesc && imageDesc !== "None") ? imageDesc : 'Không có mô tả.');
+
+        // Add bounding boxes and text to the SVG
+        bboxesData.forEach(function(bbox) {
+            var rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            rect.setAttribute("x", bbox.x);
+            rect.setAttribute("y", bbox.y);
+            rect.setAttribute("width", bbox.width);
+            rect.setAttribute("height", bbox.height);
+            rect.setAttribute("style", "stroke:red;stroke-width:2;fill-opacity:0");
+            $('#modalSvg').append(rect);
+
+            var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+            text.setAttribute("x", bbox.x);
+            text.setAttribute("y", bbox.y);
+            text.setAttribute("fill", "red");
+            text.setAttribute("font-size", "18");
+            text.textContent = bbox.text; // Display the text associated with the bounding box
+            $('#modalSvg').append(text);
+        });
+
+        $('#imageModal').modal('show');
+    }
+    $('#detailsButton').on('click', function() {
+        var imgId = $('#modalImage').attr('src').split('/').pop().split('.')[0];
+        if (imgId) {
+            window.location.href = '/add_desc_step2/?img_id=' + imgId;
+        } else {
+            console.error('Image ID is missing');
+        }
+    });
+
+
+
+    $(document).ready(function() {
+        $('#chk_insect_name').change(function() {
+            if (this.checked) {
+                $('.bbox-text').show();
+            } else {
+                $('.bbox-text').hide();
+            }
+        });
+    });
+
+    $('#downloadButton').on('click', function() {
+        var imageUrl = $('#modalImage').attr('src');  // Lấy URL của ảnh trong modal
+        if (imageUrl) {
+            // Tạo một thẻ <a> giả và sử dụng nó để tải ảnh về
+            var a = document.createElement('a');
+            a.href = imageUrl;
+            a.download = imageUrl.split('/').pop();  // Lấy tên ảnh từ URL (phần sau dấu '/')
+            a.click();
+        } else {
+            console.error('Không tìm thấy URL ảnh');
+        }
+    });
+
+</script>
+
+{% endblock %}

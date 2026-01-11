@@ -1,0 +1,76 @@
+{% extends "template_v2.html" %}
+
+{% block title %}
+Cây trồng: {{ crop.name }}
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <h3 class="mb-3">
+        🌱 {{ crop.name }}
+        {% if crop.scientific_name %}
+            <small class="text-muted">({{ crop.scientific_name }})</small>
+        {% endif %}
+    </h3>
+
+    {% if crop.description %}
+    <p class="text-muted">{{ crop.description }}</p>
+    {% endif %}
+
+    <hr>
+
+    <h5 class="mb-3">🐛 Danh sách côn trùng gây hại</h5>
+
+    {% if damages %}
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Loài côn trùng</th>
+                        <th>Mức độ hại</th>
+                        <th>Mô tả</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in damages %}
+                    <tr>
+                        <td>
+                            <strong>{{ d.species.name }}</strong><br>
+                            <small class="text-muted">
+                                {{ d.species.scientific_name }}
+                            </small>
+                        </td>
+                        <td>
+                            {% if d.damage_level == 'low' %}
+                                <span class="badge bg-success">Nhẹ</span>
+                            {% elif d.damage_level == 'medium' %}
+                                <span class="badge bg-warning text-dark">Trung bình</span>
+                            {% else %}
+                                <span class="badge bg-danger">Nặng</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ d.description|default:"—" }}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'detail' d.species.slug %}"
+                               class="btn btn-sm btn-outline-primary"
+                               target="_blank">
+                                Xem loài
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            Chưa có dữ liệu côn trùng gây hại cho cây này.
+        </div>
+    {% endif %}
+
+</div>
+{% endblock %}

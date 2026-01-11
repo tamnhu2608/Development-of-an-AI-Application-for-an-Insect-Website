@@ -1,0 +1,234 @@
+{% extends "template_v2.html" %}
+{% block content %}
+{% load custom_filters %}
+<div class="container py-3">
+    <nav class="mb-3">
+        <div class="nav nav-tabs" id="nav-tab" role="tablist">
+            <button class="nav-link active" id="nav-contribDesc-tab" data-bs-toggle="tab" data-bs-target="#nav-contribDesc" type="button" role="tab" aria-controls="nav-contribDesc" aria-selected="true">Đóng góp</button>
+            <button class="nav-link" id="nav-history-tab" data-bs-toggle="tab" data-bs-target="#nav-history" type="button" role="tab" aria-controls="nav-history" aria-selected="false">Lịch sử</button>
+        </div>
+    </nav>
+    <div class="tab-content mb-3" id="nav-tabContent">
+        <!--        ============================================Thêm mô tả==========================================-->
+        <div class="tab-pane fade show active" id="nav-contribDesc" role="tabpanel" aria-labelledby="nav-contribDesc-tab" tabindex="0">
+            <div class="container d-flex justify-content-center align-items-center">
+                <!-- Form for selecting insect species -->
+                <form id="loadForm" method="post" enctype="multipart/form-data">
+
+                    {% csrf_token %}
+                    <legend class="text-center text-black fw-bold mt-3"><p class="fw-bold fs-2">Đóng góp mô tả ảnh côn trùng</p></legend>
+                    <div class="mb-3">
+                        <label for="insectSelect" class="form-label">Select Insect</label>
+                        <select class="form-select" id="insectSelect" name="insectSelect">
+                            {% for species in species_list %}
+                            <option value="{{ species.insects_id }}">{{ species.ename }} - {{ species.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="d-grid">
+                        <button type="button" id="loadImageButton" class="btn btn-primary pt-3 pb-3">Tải ảnh</button>
+                    </div>
+                </form>
+                <hr>
+
+            </div>
+            <div class="container pb-3">
+                <div class="row mt-3" id="image-container">
+
+                    <!-- Images will be loaded here dynamically -->
+                </div>
+                <div class="d-flex justify-content-center">
+                    <button id="loadMoreButton" class="btn btn-secondary" style="display: none;">Tải thêm</button>
+                </div>
+            </div>
+        </div>
+        <!--        ============================================Lịch sử==========================================-->
+        <div class="tab-pane fade" id="nav-history" role="tabpanel" aria-labelledby="nav-history-tab" tabindex="1">
+            <legend class="text-center text-black fw-bold mt-3"><p class="fw-bold fs-2">Lịch sử đóng góp mô tả ảnh côn trùng</p></legend>
+            <div class="table-responsive" style="max-height: 550px; overflow-y: auto;">
+                <table class="table table-bordered">
+                    <thead class="table-dark" style="position: sticky; top: 0; z-index: 10;">
+                    <tr align="center">
+                        <th style="width: 15%;">Hình Ảnh</th>
+                        <th style="width: 45%;">Mô Tả</th>
+                        <th style="width: 20%;">Thời gian gửi</th>
+                        <th style="width: 20%;">Trạng thái</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% if request_desc %}
+                    {% for request in request_desc %}
+                    <tr align="center">
+                        <td>
+                            <img src="{{ request.img.get_absolute_url }}" class="img-thumbnail" width="100" alt="Hình ảnh">
+                        </td>
+                        <td align="left">{{ request.desc }}</td>
+                        <td>{{ request.created_at|date:"Y-m-d H:i:s" }}</td>
+                        <td>
+                            {% if request.status == 'pending' %}
+                                <span class="badge bg-warning text-dark">
+                                    {{ request.status|format_status }}
+                                </span>
+                            {% elif request.status == 'verified' %}
+                                <span class="badge bg-info text-dark">
+                                    {{ request.status|format_status }}
+                                </span>
+                            {% elif request.status == 'accepted' %}
+                                <span class="badge bg-success">
+                                    {{ request.status|format_status }}
+                                </span>
+                            {% elif request.status == 'rejected' %}
+                                <span class="badge bg-danger">
+                                    {{ request.status|format_status }}
+                                </span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <td colspan="4" class="text-center text-muted">Lịch sử trống...</td>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Lấy tab đang lưu trong localStorage
+        let activeTab = localStorage.getItem("activeTab");
+
+        // Nếu có tab được lưu, kích hoạt nó
+        if (activeTab) {
+            // let tabElement = document.querySelector(`#${activeTab}`);
+
+            let cleanTabId = activeTab.replace(/['"#]/g, "");
+            let tabElement = document.getElementById(cleanTabId);
+
+            if (tabElement) {
+                new bootstrap.Tab(tabElement).show();
+            }
+        }
+
+        // Lưu tab khi người dùng bấm vào
+        document.querySelectorAll('.nav-link').forEach(tab => {
+            tab.addEventListener("click", function () {
+                localStorage.setItem("activeTab", this.id);
+            });
+        });
+    });
+</script>
+<script>
+let offset = 0;  // Số lượng ảnh đã tải
+const limit = 20; // Số ảnh mỗi lần tải
+
+document.getElementById('loadImageButton').addEventListener('click', function() {
+    offset = 0;  // Reset offset khi bấm tải ảnh mới
+    loadImages(true);  // Gọi hàm load ảnh (xóa ảnh cũ)
+});
+
+document.getElementById('loadMoreButton').addEventListener('click', function() {
+    loadImages(false);  // Tải thêm ảnh
+});
+
+// Hàm tải ảnh
+function loadImages(clear = false) {
+    const insectId = document.getElementById('insectSelect').value;
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    fetch(`/add_desc/?insectId=${insectId}&offset=${offset}&limit=${limit}`, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': csrfToken,
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        const imageContainer = document.getElementById('image-container');
+        if (clear) imageContainer.innerHTML = ''; // Xóa ảnh cũ nếu là tải mới
+
+        data.images.forEach(image => {
+            let svgContent = `<svg class="img-fluid" viewBox="0 0 ${image.width} ${image.height}" data-insect-id="${image.insectsId}">
+                                <a href="/add_desc_step2/?img_id=${image.img_id}"><image href="${image.url}" height="100%" width="100%"/></a>
+                              </svg>`;
+
+            const cardHtml = `
+            <div class="col-sm-6 col-md-4 col-lg-3 mb-3 image-card" data-img-id="${image.img_id}">
+                <div class="card">
+                    ${svgContent}
+                </div>
+            </div>`;
+            imageContainer.insertAdjacentHTML('beforeend', cardHtml);
+        });
+
+        // Cập nhật offset để tải thêm ảnh lần sau
+        offset += limit;
+
+        // Hiển thị hoặc ẩn nút "Tải thêm"
+        const loadMoreButton = document.getElementById('loadMoreButton');
+        if (data.has_more) {
+            loadMoreButton.style.display = 'block';
+        } else {
+            loadMoreButton.style.display = 'none';
+        }
+    })
+    .catch(error => console.error('Error loading images:', error));
+}
+</script>
+
+<script>
+document.getElementById('loadImageButton').addEventListener('click', function() {
+    const insectId = document.getElementById('insectSelect').value;
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    fetch(`/add_desc/?insectId=${insectId}`, {
+        method: 'GET',
+        headers: {
+            'X-CSRFToken': csrfToken,
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        const imageContainer = document.getElementById('image-container');
+        imageContainer.innerHTML = ''; // Clear current images
+        data.images.forEach(image => {
+            // Construct the SVG element for each image
+            let svgContent = `<svg class="img-fluid" viewBox="0 0 ${image.width} ${image.height}" data-insect-id="${image.insectsId}">
+                                <a href="/add_desc_step2/?img_id=${image.img_id}"><image href="${image.url}" height="100%" width="100%"/></a>
+                                `;
+            //image.bboxes.forEach(bbox => {
+            //    const textX = parseFloat(bbox.x) + 2;
+            //    const textY = parseFloat(bbox.y) + 15;
+            //    svgContent += `<rect x="${bbox.x}" y="${bbox.y}" width="${bbox.width}" height="${bbox.height}" style="stroke:red;stroke-width:2;fill-opacity:0"/>
+            //                    <text x="${textX}" y="${textY}" fill="red" class="bbox-text" font-size="18">${image.insectsName}</text>`;
+            //});
+            svgContent += `</svg>`;
+
+            // Construct and append the card with the SVG to the image container
+            const cardHtml = `
+            <div class="col-sm-6 col-md-4 col-lg-3 mb-3 image-card" data-img-id="${image.img_id}">
+                <div class="card">
+                    ${svgContent}
+                </div>
+            </div>`;
+            imageContainer.insertAdjacentHTML('beforeend', cardHtml);
+        });
+    })
+    .catch(error => console.error('Error loading images:', error));
+});
+
+document.addEventListener('click', function(e) {
+    if (e.target && e.target.closest('.image-card')) {
+        const imgId = e.target.closest('.image-card').dataset.imgId;
+        //window.location.href = `/edit_desc_step2/?img_id=${imgId}`;
+
+
+    }
+});
+</script>
+{% endblock %}

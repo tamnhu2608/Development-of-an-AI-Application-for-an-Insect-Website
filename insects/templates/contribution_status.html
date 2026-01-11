@@ -1,0 +1,136 @@
+{% extends "template_v2.html" %}
+{% block content %}
+{% load custom_filters %}
+{% if messages %}
+    <div class="container py-3">
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}" role="alert">
+                {{ message }}
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+
+<div class="container py-3">
+    <nav class="mb-3">
+        <div class="nav nav-tabs" id="nav-tab" role="tablist">
+            <button class="nav-link active" id="nav-contribInsect-tab" data-bs-toggle="tab" data-bs-target="#nav-contribInsect" type="button" role="tab" aria-controls="nav-contribInsect" aria-selected="true">Đề xuất</button>
+            <button class="nav-link" id="nav-history-tab" data-bs-toggle="tab" data-bs-target="#nav-history" type="button" role="tab" aria-controls="nav-history" aria-selected="false">Lịch sử</button>
+        </div>
+    </nav>
+    <div class="tab-content mb-3" id="nav-tabContent">
+        <div class="tab-pane fade show active" id="nav-contribInsect" role="tabpanel" aria-labelledby="nav-contribInsect-tab" tabindex="0">
+            <div class="d-flex justify-content-center">
+                <p class="fw-bold fs-2">Đề xuất đóng góp hình ảnh</p>
+            </div>
+        </div>
+        <!--  ===========================================Lịch sử đóng góp=====================================================  -->
+        <div class="tab-pane fade" id="nav-history" role="tabpanel" aria-labelledby="nav-history-tab" tabindex="1">
+            <div class="d-flex justify-content-center">
+                <p class="fw-bold fs-2">Lịch sử đóng góp hình ảnh</p>
+            </div>
+            <div>
+                <hr>
+            </div>
+            <table class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr align="center">
+                        <th scope="col">STT</th>
+                        <th scope="col">Hình ảnh</th>
+                        <th scope="col">Tên loài</th>
+                        <th scope="col">Thời gian đóng góp</th>
+                        <th scope="col">Trạng thái</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if contributed_images %}
+                        {% for image in contributed_images %}
+                            <tr align="center">
+                                <th scope="row">{{ forloop.counter }}</th>
+                                <td>
+                                    <a href="{{ image.full_url }}" target="_blank">
+                                        <img src="{{ image.full_url }}" class="img-thumbnail" alt="Ảnh đã đóng góp" width="100">
+                                    </a>
+                                </td>
+                                <td align="left">{{ image.insects_id.vi_name }} ({{ image.insects_id.ename }})</td>
+                                <td>{{ image.request_time|date:"d/m/Y H:i:s" }}</td>
+                                <td>
+                                    {% if image.status == 'pending' %}
+                                        <span class="badge bg-warning text-dark">
+                                            {{ image.status|format_status }}
+                                        </span>
+                                    {% elif image.status == 'verified' %}
+                                        <span class="badge bg-info text-dark">
+                                            {{ image.status|format_status }}
+                                        </span>
+                                    {% elif image.status == 'accepted' %}
+                                        <span class="badge bg-success">
+                                            {{ image.status|format_status }}
+                                        </span>
+                                    {% elif image.status == 'rejected' %}
+                                        <span class="badge bg-danger">
+                                            {{ image.status|format_status }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center">
+                                <p class="text-muted">Bạn chưa đóng góp hình ảnh nào!</p>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Lấy tab đang lưu trong localStorage
+        let activeTab = localStorage.getItem("activeTab");
+
+        // Nếu có tab được lưu, kích hoạt nó
+        if (activeTab) {
+            // let tabElement = document.querySelector(`#${activeTab}`);
+
+            let cleanTabId = activeTab.replace(/['"#]/g, "");
+            let tabElement = document.getElementById(cleanTabId);
+
+            if (tabElement) {
+                new bootstrap.Tab(tabElement).show();
+            }
+        }
+
+        // Lưu tab khi người dùng bấm vào
+        document.querySelectorAll('.nav-link').forEach(tab => {
+            tab.addEventListener("click", function () {
+                localStorage.setItem("activeTab", this.id);
+            });
+        });
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var successModal = new bootstrap.Modal(document.getElementById('successModal'), { keyboard: false });
+
+        {% if success %}
+        successModal.show();
+        {% endif %}
+
+        document.getElementById('successModal').addEventListener('hidden.bs.modal', function () {
+            // Chỉ reload nếu người dùng vừa submit form
+            if (sessionStorage.getItem("submitted") === "true") {
+                sessionStorage.removeItem("submitted");
+                location.reload();
+            }
+        });
+    });
+
+    // Khi submit form, đánh dấu đã submit
+    document.querySelector("form").addEventListener("submit", function () {
+        sessionStorage.setItem("submitted", "true");
+    });
+</script>
+{% endblock %}

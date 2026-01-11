@@ -1,0 +1,683 @@
+{% extends 'template_v2.html' %}
+{% load static %}
+
+{% block title %}Bản đồ phân bố côn trùng{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-0">
+    <div class="row h-100">
+        <!-- Bộ lọc bên trái -->
+        <div class="col-lg-3 col-md-4 sidebar bg-light p-3" style="overflow-y: auto;">
+            <h4 class="mb-4"><i class="fas fa-filter"></i> Bộ lọc dữ liệu</h4>
+            
+            <!-- Lọc theo loài -->
+            <div class="mb-4">
+                <h6><i class="fas fa-bug"></i> Lọc theo loài</h6>
+                <select class="form-select form-select-sm" id="speciesFilter">
+                    <option value="">Tất cả loài</option>
+                    {% for species in species_list %}
+                    <option value="{{ species.insects_id }}">{{ species.name }} ({{ species.ename }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <!-- Lọc theo khu vực -->
+            <div class="mb-4">
+                <h6><i class="fas fa-map-marker-alt"></i> Lọc theo khu vực</h6>
+                <select class="form-select form-select-sm" id="regionLevel">
+                    <!--<option value="">Chọn cấp khu vực</option>-->
+                    <option value="country">Quốc gia</option>
+                    <option value="province">Tỉnh/Thành phố</option>
+                    <!--<option value="district">Quận/Huyện</option>-->
+                </select>
+                <select class="form-select form-select-sm mt-2" id="regionFilter" disabled>
+                    <option value="">Chọn khu vực...</option>
+                </select>
+            </div>
+            
+            <!-- Lọc theo thời gian -->
+            <div class="mb-4">
+                <h6><i class="fas fa-calendar-alt"></i> Lọc theo thời gian</h6>
+                <div class="row">
+                    <div class="col-6">
+                        <label class="form-label small">Từ ngày</label>
+                        <input type="date" class="form-control form-control-sm" id="startDate">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small">Đến ngày</label>
+                        <input type="date" class="form-control form-control-sm" id="endDate">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Lọc theo cây trồng -->
+            <div class="mb-4">
+                <h6><i class="fas fa-seedling"></i> Lọc theo cây trồng</h6>
+                <select class="form-select form-select-sm" id="cropFilter">
+                    <option value="">Tất cả cây trồng</option>
+                    {% for crop in crops %}
+                    <option value="{{ crop.id }}">{{ crop.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <!-- Thống kê -->
+            <div class="mb-4">
+                <h6><i class="fas fa-chart-bar"></i> Thống kê</h6>
+                <div class="card">
+                    <div class="card-body p-2">
+                        <p class="mb-1 small">Tổng số điểm: <span id="totalPoints" class="fw-bold">0</span></p>
+                        <p class="mb-1 small">Số loài: <span id="totalSpecies" class="fw-bold">0</span></p>
+                        <p class="mb-0 small">Phạm vi thời gian: <span id="dateRange" class="fw-bold">-</span></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Nút hành động -->
+            <div class="mt-4">
+                <button class="btn btn-primary btn-sm w-100 mb-2" id="applyFilters">
+                    <i class="fas fa-filter"></i> Áp dụng bộ lọc
+                </button>
+                <button class="btn btn-outline-secondary btn-sm w-100 mb-2" id="resetFilters">
+                    <i class="fas fa-redo"></i> Đặt lại
+                </button>
+                {% if user.is_authenticated %}
+                <a href="{% url 'contribute_distribution_with_image' %}" class="btn btn-success btn-sm w-100">
+                    <i class="fas fa-plus"></i> Đóng góp vị trí
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Bản đồ bên phải -->
+        <div class="col-lg-9 col-md-8 p-0 h-100 position-relative">
+            <div id="map" class="h-100"></div>
+            
+            <!-- Panel thông tin chi tiết -->
+            <div id="infoPanel" class="card shadow" style="display: none; position: absolute; bottom: 20px; right: 20px; width: 300px; max-height: 70vh; overflow-y: auto; z-index: 1000;">
+                <div class="card-header py-2">
+                    <h6 class="mb-0">Chi tiết điểm phân bố</h6>
+                    <button type="button" class="btn-close btn-sm" onclick="closeInfoPanel()"></button>
+                </div>
+                <div class="card-body py-2" id="infoContent">
+                    <!-- Nội dung sẽ được cập nhật bằng JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal hiển thị ảnh -->
+<div class="modal fade" id="imageModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ảnh quan sát</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="modalImage" src="" alt="" class="img-fluid">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<style>
+    /* QUAN TRỌNG: Thiết lập chiều cao cho toàn bộ cấu trúc */
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+    }
+    
+    .row.h-100 {
+        height: 100% !important;
+    }
+    
+    #map {
+        height: 100%;
+        width: 100%;
+        min-height: 500px;
+        z-index: 1;
+    }
+    
+    .sidebar {
+        height: 100%;
+        overflow-y: auto;
+        border-right: 1px solid #dee2e6;
+        z-index: 1000;
+    }
+    
+    .leaflet-popup-content {
+        max-width: 300px;
+    }
+    
+    .leaflet-popup-content h6 {
+        color: #0d6efd;
+    }
+    
+    .info-icon {
+        width: 30px;
+        height: 30px;
+    }
+    
+    /* Fix mobile responsive */
+    @media (max-width: 768px) {
+        .container-fluid {
+            height: auto;
+        }
+        
+        .row.h-100 {
+            height: auto !important;
+        }
+        
+        .sidebar {
+            height: 300px;
+            max-height: 300px;
+        }
+        
+        #map {
+            height: 500px;
+            min-height: 500px;
+        }
+    }
+    
+    /* Loading overlay */
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1001;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+// Biến toàn cục
+let map;
+let markersLayer;
+let currentMarkers = [];
+
+// Khởi tạo bản đồ - PHIÊN BẢN CHẮC CHẮN 100%
+function initMap() {
+    console.log('Initializing map...');
+    
+    // Kiểm tra xem div map có tồn tại không
+    const mapElement = document.getElementById('map');
+    if (!mapElement) {
+        console.error('Map element not found!');
+        return;
+    }
+    
+    console.log('Map element found. Dimensions:', mapElement.offsetWidth, 'x', mapElement.offsetHeight);
+    
+    try {
+        // Tạo bản đồ với tọa độ trung tâm Việt Nam
+        map = L.map('map').setView([16.1666667, 107.8333333], 6);
+        
+        // Thêm tile layer (OpenStreetMap)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 18,
+        }).addTo(map);
+        
+        // THÊM CONTROL TỶ LỆ
+        L.control.scale().addTo(map);
+        
+        // Force resize để đảm bảo bản đồ hiển thị đúng
+        setTimeout(() => {
+            if (map) {
+                map.invalidateSize();
+                console.log('Map invalidateSize called');
+            }
+        }, 100);
+        
+        // Thêm sự kiện resize window
+        window.addEventListener('resize', function() {
+            setTimeout(() => {
+                if (map) {
+                    map.invalidateSize();
+                }
+            }, 200);
+        });
+        
+        // Khởi tạo marker cluster
+        markersLayer = L.markerClusterGroup({
+            maxClusterRadius: 50,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
+        });
+        map.addLayer(markersLayer);
+        
+        console.log('Map initialized successfully');
+        
+        // Tải dữ liệu ban đầu
+        loadDistributionData();
+        
+    } catch (error) {
+        console.error('Error initializing map:', error);
+        
+        // Hiển thị thông báo lỗi chi tiết
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'alert alert-danger m-3';
+        errorDiv.innerHTML = `
+            <strong><i class="fas fa-exclamation-triangle"></i> Lỗi khi khởi tạo bản đồ:</strong>
+            <p class="mb-0 small">${error.message}</p>
+            <p class="mb-0 small">Vui lòng kiểm tra console để biết thêm chi tiết.</p>
+        `;
+        document.getElementById('map').parentNode.appendChild(errorDiv);
+    }
+}
+
+// Tải dữ liệu phân bố
+function loadDistributionData(filters = {}) {
+    console.log('Loading distribution data with filters:', filters);
+    
+    // Hiển thị loading
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'alert alert-info position-absolute top-0 start-0 m-3';
+    loadingDiv.style.zIndex = '1000';
+    loadingDiv.innerHTML = `
+        <strong><i class="fas fa-spinner fa-spin"></i> Đang tải dữ liệu...</strong>
+    `;
+    document.getElementById('map').appendChild(loadingDiv);
+    
+    // Xóa markers cũ
+    if (markersLayer) {
+        markersLayer.clearLayers();
+    }
+    currentMarkers = [];
+    
+    // Tạo URL với các bộ lọc
+    let url = '/api/distribution-map/';
+    const params = new URLSearchParams();
+    
+    // Thêm các bộ lọc vào params
+    for (const [key, value] of Object.entries(filters)) {
+        if (value) {
+            params.append(key, value);
+        }
+    }
+    
+    const queryString = params.toString();
+    if (queryString) {
+        url += '?' + queryString;
+    }
+    
+    console.log('Fetching data from:', url);
+    
+    // Gọi API
+    fetch(url)
+        .then(response => {
+            console.log('Response status:', response.status);
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Data received:', data.length, 'points');
+            
+            // Xóa loading
+            if (loadingDiv && loadingDiv.parentNode) {
+                loadingDiv.remove();
+            }
+            
+            // Cập nhật thống kê
+            updateStats(data);
+            
+            // Nếu không có dữ liệu
+            if (data.length === 0) {
+                const noDataDiv = document.createElement('div');
+                noDataDiv.className = 'alert alert-warning position-absolute top-0 start-0 m-3';
+                noDataDiv.style.zIndex = '1000';
+                noDataDiv.innerHTML = `
+                    <strong><i class="fas fa-info-circle"></i> Không có dữ liệu!</strong>
+                    <p class="mb-0 small">Không tìm thấy điểm phân bố nào phù hợp với bộ lọc.</p>
+                `;
+                document.getElementById('map').appendChild(noDataDiv);
+                
+                setTimeout(() => {
+                    if (noDataDiv.parentNode) {
+                        noDataDiv.remove();
+                    }
+                }, 5000);
+                return;
+            }
+            
+            // Thêm markers mới
+            data.forEach(point => {
+                try {
+                    // Kiểm tra tọa độ hợp lệ
+                    if (!point.lat || !point.lng) {
+                        console.warn('Invalid coordinates for point:', point);
+                        return;
+                    }
+                    
+                    // Tạo marker với icon tùy chỉnh
+                    const markerIcon = L.divIcon({
+                        html: `<div style="
+                            width: 12px;
+                            height: 12px;
+                            background-color: #dc3545;
+                            border: 2px solid white;
+                            border-radius: 50%;
+                            box-shadow: 0 0 5px rgba(0,0,0,0.3);
+                        "></div>`,
+                        className: 'custom-marker',
+                        iconSize: [12, 12],
+                        iconAnchor: [6, 6]
+                    });
+                    
+                    const marker = L.marker([point.lat, point.lng], { icon: markerIcon })
+                        .bindPopup(createPopupContent(point))
+                        .on('click', function() {
+                            showInfoPanel(point);
+                        });
+                    
+                    markersLayer.addLayer(marker);
+                    currentMarkers.push({
+                        marker: marker,
+                        data: point
+                    });
+                    
+                } catch (error) {
+                    console.error('Error creating marker for point:', point, error);
+                }
+            });
+            
+            // Nếu có dữ liệu, zoom đến tất cả markers
+            if (data.length > 0 && markersLayer.getBounds().isValid()) {
+                map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
+            }
+            
+        })
+        .catch(error => {
+            console.error('Error loading distribution data:', error);
+            
+            // Xóa loading indicator khi có lỗi
+            if (loadingDiv && loadingDiv.parentNode) {
+                loadingDiv.remove();
+            }
+            
+            // Hiển thị thông báo lỗi
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'alert alert-danger position-absolute top-0 start-0 m-3';
+            errorDiv.style.zIndex = '1000';
+            errorDiv.innerHTML = `
+                <strong><i class="fas fa-exclamation-triangle"></i> Lỗi khi tải dữ liệu:</strong>
+                <p class="mb-0 small">${error.message}</p>
+            `;
+            document.getElementById('map').appendChild(errorDiv);
+            
+            // Tự động ẩn sau 5 giây
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.remove();
+                }
+            }, 5000);
+        });
+}
+
+// Tạo nội dung popup
+function createPopupContent(point) {
+    return `
+        <div class="popup-content" style="min-width: 200px;">
+            <h6 class="fw-bold mb-2 text-primary">${point.species?.name || 'Không rõ'}</h6>
+            <div class="small">
+                ${point.species?.scientific_name ? 
+                    `<p class="mb-1"><strong>Tên khoa học:</strong> ${point.species.scientific_name}</p>` : ''}
+                ${point.region?.name ? 
+                    `<p class="mb-1"><strong>Khu vực:</strong> ${point.region.name}</p>` : ''}
+                ${point.date ? 
+                    `<p class="mb-1"><strong>Ngày:</strong> ${point.date}</p>` : ''}
+                ${point.created_by ? 
+                    `<p class="mb-2"><strong>Người đóng góp:</strong> ${point.created_by}</p>` : ''}
+                ${point.note ? 
+                    `<p class="mb-2"><strong>Ghi chú:</strong> ${point.note.substring(0, 100)}${point.note.length > 100 ? '...' : ''}</p>` : ''}
+            </div>
+            <div class="text-center mt-2">
+                ${point.species?.slug ? 
+                    `<a href="/detail/${point.species.slug}/" class="btn btn-sm btn-outline-primary" target="_blank">
+                        <i class="fas fa-info-circle"></i> Chi tiết loài
+                    </a>` : ''}
+            </div>
+        </div>
+    `;
+}
+
+// Hiển thị panel thông tin
+function showInfoPanel(point) {
+    const content = `
+        <div class="info-content">
+            <h6 class="fw-bold mb-2 text-primary">${point.species?.name || 'Không rõ'}</h6>
+            <div class="small">
+                ${point.species?.scientific_name ? `
+                <div class="row mb-1">
+                    <div class="col-4"><strong>Tên khoa học:</strong></div>
+                    <div class="col-8">${point.species.scientific_name}</div>
+                </div>
+                ` : ''}
+                
+                ${point.region?.name ? `
+                <div class="row mb-1">
+                    <div class="col-4"><strong>Khu vực:</strong></div>
+                    <div class="col-8">${point.region.name} ${point.region?.level ? `(${getRegionLevelName(point.region.level)})` : ''}</div>
+                </div>
+                ` : ''}
+                
+                <div class="row mb-1">
+                    <div class="col-4"><strong>Tọa độ:</strong></div>
+                    <div class="col-8">${point.lat?.toFixed(6) || 'N/A'}, ${point.lng?.toFixed(6) || 'N/A'}</div>
+                </div>
+                
+                ${point.date ? `
+                <div class="row mb-1">
+                    <div class="col-4"><strong>Ngày quan sát:</strong></div>
+                    <div class="col-8">${point.date}</div>
+                </div>
+                ` : ''}
+                
+                ${point.created_by ? `
+                <div class="row mb-2">
+                    <div class="col-4"><strong>Người đóng góp:</strong></div>
+                    <div class="col-8">${point.created_by}</div>
+                </div>
+                ` : ''}
+                
+                ${point.note ? `
+                <div class="alert alert-light border small mb-2">
+                    <strong>Ghi chú:</strong><br>
+                    ${point.note}
+                </div>
+                ` : ''}
+                
+                ${point.observation_image ? `
+                <div class="text-center mb-2">
+                    <img src="${point.observation_image}" 
+                         alt="Ảnh quan sát" 
+                         class="img-thumbnail cursor-pointer"
+                         style="max-height: 150px;"
+                         onclick="showImageModal('${point.observation_image}')">
+                    <p class="small text-muted mt-1">Nhấp vào ảnh để xem chi tiết</p>
+                </div>
+                ` : ''}
+            </div>
+            
+            <div class="text-center mt-2">
+                ${point.species?.slug ? `
+                <a href="/detail/${point.species.slug}/" class="btn btn-primary btn-sm" target="_blank">
+                    <i class="fas fa-external-link-alt"></i> Xem chi tiết loài
+                </a>
+                ` : ''}
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('infoContent').innerHTML = content;
+    document.getElementById('infoPanel').style.display = 'block';
+}
+
+// Đóng panel thông tin
+function closeInfoPanel() {
+    document.getElementById('infoPanel').style.display = 'none';
+}
+
+// Hiển thị modal ảnh
+function showImageModal(imageUrl) {
+    document.getElementById('modalImage').src = imageUrl;
+    const modal = new bootstrap.Modal(document.getElementById('imageModal'));
+    modal.show();
+}
+
+// Cập nhật thống kê
+function updateStats(data) {
+    document.getElementById('totalPoints').textContent = data.length;
+    
+    // Đếm số loài duy nhất
+    const uniqueSpecies = [...new Set(data.map(p => p.species?.id).filter(id => id))];
+    document.getElementById('totalSpecies').textContent = uniqueSpecies.length;
+    
+    // Cập nhật phạm vi thời gian
+    if (data.length > 0) {
+        const dates = data.map(p => p.date).filter(d => d);
+        if (dates.length > 0) {
+            const sortedDates = dates.sort();
+            document.getElementById('dateRange').textContent = 
+                `${sortedDates[0]} - ${sortedDates[sortedDates.length - 1]}`;
+        } else {
+            document.getElementById('dateRange').textContent = 'Không có dữ liệu thời gian';
+        }
+    } else {
+        document.getElementById('dateRange').textContent = '-';
+    }
+}
+
+// Lấy tên cấp khu vực
+function getRegionLevelName(level) {
+    const levels = {
+        'country': 'Quốc gia',
+        'province': 'Tỉnh/Thành phố',
+        'district': 'Quận/Huyện',
+        'commune': 'Xã/Phường'
+    };
+    return levels[level] || level;
+}
+
+// Xử lý khi trang tải xong
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM fully loaded and parsed');
+    
+    // ĐỢI THÊM 100ms để đảm bảo tất cả CSS đã load
+    setTimeout(() => {
+        console.log('Initializing map...');
+        initMap();
+
+         // ===== MẶC ĐỊNH LOAD QUỐC GIA → VIỆT NAM =====
+        const regionLevelSelect = document.getElementById('regionLevel');
+        if (regionLevelSelect) {
+            regionLevelSelect.value = 'country';   // chọn Quốc gia
+            regionLevelSelect.dispatchEvent(new Event('change')); // kích hoạt gọi API
+        }
+    }, 100);
+    
+    // Áp dụng bộ lọc
+    document.getElementById('applyFilters').addEventListener('click', function() {
+        const filters = {};
+        
+        // Lọc theo loài
+        const speciesFilter = document.getElementById('speciesFilter').value;
+        if (speciesFilter) filters.species = speciesFilter;
+        
+        // Lọc theo khu vực
+        const regionFilter = document.getElementById('regionFilter').value;
+        if (regionFilter) filters.region = regionFilter;
+        
+        // Lọc theo thời gian
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        if (startDate) filters.start_date = startDate;
+        if (endDate) filters.end_date = endDate;
+        
+        // Lọc theo cây trồng
+        const cropFilter = document.getElementById('cropFilter').value;
+        if (cropFilter) filters.crop = cropFilter;
+        
+        loadDistributionData(filters);
+
+       
+    });
+    
+    // Đặt lại bộ lọc
+    document.getElementById('resetFilters').addEventListener('click', function() {
+        document.getElementById('speciesFilter').value = '';
+        document.getElementById('regionLevel').value = '';
+        document.getElementById('regionFilter').value = '';
+        document.getElementById('regionFilter').disabled = true;
+        document.getElementById('startDate').value = '';
+        document.getElementById('endDate').value = '';
+        document.getElementById('cropFilter').value = '';
+        loadDistributionData();
+    });
+    
+    // Xử lý lọc khu vực theo cấp
+    document.getElementById('regionLevel').addEventListener('change', function() {
+        const level = this.value;
+        const regionSelect = document.getElementById('regionFilter');
+        
+        if (level) {
+            regionSelect.disabled = false;
+            
+            // Gọi API lấy khu vực theo cấp
+            fetch(`/api/regions/?level=${level}`)
+                .then(response => response.json())
+                .then(data => {
+                    regionSelect.innerHTML = '<option value="">Chọn khu vực...</option>';
+                    data.forEach(region => {
+                        regionSelect.innerHTML += `<option value="${region.id}">${region.name}</option>`;
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading regions:', error);
+                    regionSelect.innerHTML = '<option value="">Lỗi khi tải dữ liệu</option>';
+                });
+        } else {
+            regionSelect.disabled = true;
+            regionSelect.innerHTML = '<option value="">Chọn khu vực...</option>';
+        }
+    });
+    
+    // Thêm nút đóng cho info panel
+    const closeBtn = document.querySelector('#infoPanel .btn-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', closeInfoPanel);
+    }
+});
+
+// Xử lý sự kiện cho modal ảnh
+document.addEventListener('DOMContentLoaded', function() {
+    const imageModal = document.getElementById('imageModal');
+    if (imageModal) {
+        imageModal.addEventListener('hidden.bs.modal', function () {
+            document.getElementById('modalImage').src = '';
+        });
+    }
+});
+</script>
+{% endblock %}

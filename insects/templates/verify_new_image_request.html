@@ -1,0 +1,1158 @@
+{% extends "template_v2.html" %}
+{% load static %}
+{% block content %}
+<div class="bg-light">
+    <div class="container py-5">
+        <div class="d-flex justify-content-center">
+            <p class="fw-bold fs-2">Xét Duyệt Hình Ảnh Mới</p>
+        </div>
+        <div>
+            <hr>
+        </div>
+
+        <div class="row g-4">
+            <!-- Thông tin phân loại -->
+            <div class="col-md-3">
+                <div class="card shadow-sm">
+                    <div class="card-header text-center fw-bold bg-primary text-white">
+                        Thông tin côn trùng
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Tên khoa học:</strong> {{ specie.ename }}</p>
+                        <p><strong>Tên thường gọi:</strong> {{ specie.name }}</p>
+                        <p><strong>Phân loại khoa học:</strong></p>
+                        <ul class="list-unstyled">
+                            <li><strong>Giới (Kingdom):</strong> {{ specie.genus.family.order.class_field.phylum.kingdom.ename }}</li>
+                            <li><strong>Ngành (Phylum):</strong> {{ specie.genus.family.order.class_field.phylum.ename }}</li>
+                            <li><strong>Lớp (Class):</strong> {{ specie.genus.family.order.class_field.ename }}</li>
+                            <li><strong>Bộ (Order):</strong> {{ specie.genus.family.order.ename }}</li>
+                            <li><strong>Họ (Family):</strong> {{ specie.genus.family.ename }}</li>
+                            <li><strong>Chi (Genus):</strong> {{ specie.genus.ename }}</li>
+                            <li><strong>Loài (Species):</strong> {{ specie.ename }}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Canvas và Toolbar -->
+            <div class="col-md-9">
+                <div class="bg-white p-3 shadow rounded">
+                    <!-- Toolbar với các nút chức năng -->
+                    <div class="toolbar mb-3 d-flex flex-wrap gap-2 justify-content-center">
+                        <div class="btn-group" role="group">
+                            <button type="button" id="undoBtn" class="btn btn-outline-secondary" title="Undo (Ctrl+Z)">
+                                <i class="bi bi-arrow-counterclockwise"></i> Undo
+                            </button>
+                            <button type="button" id="redoBtn" class="btn btn-outline-secondary" title="Redo (Ctrl+Y)">
+                                <i class="bi bi-arrow-clockwise"></i> Redo
+                            </button>
+                        </div>
+                        
+                        <button type="button" id="autoDetectBtn" class="btn btn-outline-primary" title="Nhận dạng tự động">
+                            <i class="bi bi-robot"></i> Nhận dạng tự động
+                        </button>
+                        
+                        <button type="button" id="clearAllBtn" class="btn btn-outline-danger" title="Xóa tất cả bounding boxes">
+                            <i class="bi bi-trash"></i> Xóa tất cả
+                        </button>
+                        
+                        <button type="button" id="drawModeBtn" class="btn btn-outline-success" title="Chế độ vẽ bounding box">
+                            <i class="bi bi-bounding-box"></i> Vẽ BBox
+                        </button>
+                    </div>
+                    
+                    <!-- Thông báo trạng thái -->
+                    <div id="toolbarStatus" class="text-center mb-2">
+                        <span id="bboxCount" class="badge bg-info">0 bounding boxes</span>
+                        <span id="drawModeStatus" class="badge bg-success d-none">Chế độ vẽ</span>
+                    </div>
+                    
+                    <!-- Container cho canvas và ảnh -->
+                    <div class="d-flex justify-content-center">
+                        <div id="imageWrapper" style="position: relative; display: inline-block; max-width: 100%;">
+                            <img id="sourceImage" 
+                                 src="{{ MEDIA_URL }}{{ img_url }}" 
+                                 style="display: block; max-width: 100%; height: auto;" 
+                                 onload="initCanvas(this)"
+                                 onerror="handleImageError(this)">
+                            <div id="canvasWrapper" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+                                <canvas id="bboxCanvas" style="width: 100%; height: 100%; display: block;"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="bi bi-info-circle"></i> 
+                            Chỉnh sửa bounding box: Nhấp và kéo để di chuyển. Kéo các góc để thay đổi kích thước. 
+                            Nhấn Delete để xóa. Sử dụng Ctrl+Z để undo, Ctrl+Y để redo.
+                        </small>
+                    </div>
+                </div>
+                
+                <!-- Form xét duyệt -->
+                <form id="verifyForm" action="{% url 'verify_new_image_request' request_item.request_img_id %}" method="post" class="p-4 bg-white shadow rounded mt-3">
+                    {% csrf_token %}
+                    <div class="mb-4">
+                        <label for="description" class="form-label fw-bold text-primary">Mô tả chi tiết</label>
+                        <textarea class="form-control border border-primary shadow-sm" id="description" name="description" rows="4" placeholder="Nhập mô tả chi tiết...">{{ request_item.desc }}</textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="species_Id" class="form-label fw-bold">Chọn loài côn trùng</label>
+                        <select name="species_id" id="species_Id" class="form-select" required>
+                            <option value="{{ request_item.insects_id.insects_id }}">
+                                {{ request_item.insects_id.insects_id }} - {{ request_item.insects_id.name }} - {{ request_item.insects_id.vi_name }}
+                            </option>
+                            {% for item_species in species_list %}
+                                <option value="{{ item_species.insects_id }}">{{ item_species.insects_id }} - {{ item_species.name }} - {{ item_species.vi_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Hidden input để lưu action -->
+                    <input type="hidden" name="action" id="actionInput" value="accept">
+                    <!-- Hidden input để lưu bbox data -->
+                    <input type="hidden" name="bbox_data" id="hiddenBboxData" value="">
+
+                    <div class="text-center">
+                        {% if has_verified %}
+                            <div class="alert alert-success">Bạn đã xét duyệt hình ảnh này!</div>
+                            <a class="btn btn-primary" href="{% url 'cv_verify_new_image' %}">Trở về</a>
+                        {% else %}
+                            {% if request_item.status == 'verified' %}
+                                <button type="button" class="btn btn-success" disabled>Đã duyệt</button>
+                                <a class="btn btn-primary" href="{% url 'cv_verify_new_image' %}">Trở về</a>
+                            {% else %}
+                                <button type="button" id="acceptBtn" class="btn btn-success px-4 me-3 shadow">
+                                    <i class="bi bi-check-circle"></i> Xét duyệt
+                                </button>
+                                <button type="button" id="rejectBtn" class="btn btn-danger px-4 shadow">
+                                    <i class="bi bi-x-circle"></i> Từ chối
+                                </button>
+                            {% endif %}
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal xác nhận hành động -->
+<div class="modal fade" id="resultModal" tabindex="-1" aria-labelledby="resultModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content shadow">
+      <div class="modal-header">
+        <h5 class="modal-title" id="resultModalLabel">Thông báo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center fw-bold" id="modalMessage">
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-primary" id="modal-ok-btn">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Load Fabric.js từ CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.3.0/fabric.min.js"></script>
+{{ bbox_lines|json_script:"bbox-data" }}
+<!-- Truyền dữ liệu từ Django sang JavaScript một cách an toàn -->
+<script>
+    const SPECIES_LABEL = "{{ specie.name|escapejs }}";
+    // ==== Dữ liệu số: luôn ép kiểu Number ====
+    const IMAGE_WIDTH = Number("{{ img_width|default_if_none:'0' }}");
+    const IMAGE_HEIGHT = Number("{{ img_height|default_if_none:'0' }}");
+
+    // ==== JSON bbox từ json_script ====
+    const bboxDataElement = document.getElementById('bbox-data');
+    let BBOX_LINES = [];
+
+    if (bboxDataElement && bboxDataElement.textContent.trim() !== "") {
+        try {
+            BBOX_LINES = JSON.parse(bboxDataElement.textContent);
+        } catch (error) {
+            console.error("Error parsing bbox data:", error);
+        }
+    }
+
+    // ==== URL: escape cho JS ====
+    const IMAGE_URL = "{{ MEDIA_URL|escapejs }}{{ img_url|escapejs }}";
+
+    // ==== ID: ép Number, tránh undefined ====
+    const REQUEST_ID = Number("{{ request_item.request_img_id|default_if_none:'0' }}");
+
+    console.log("Image dimensions:", IMAGE_WIDTH, IMAGE_HEIGHT);
+    console.log("Bbox lines data:", BBOX_LINES);
+    console.log("Image URL:", IMAGE_URL);
+    console.log("Request ID:", REQUEST_ID);
+</script>
+
+<script>
+// Biến toàn cục
+let canvas = null;
+let bboxes = [];
+let imageScale = 1;
+let originalWidth = 0;
+let originalHeight = 0;
+let isDrawingMode = false;
+let rect, startX, startY;
+let history = [];
+let historyIndex = -1;
+
+// Hàm xử lý lỗi ảnh
+function handleImageError(imgElement) {
+    console.error("Không thể tải ảnh:", imgElement.src);
+    alert("Không thể tải ảnh. Vui lòng kiểm tra đường dẫn hoặc liên hệ quản trị viên.");
+}
+
+// Hàm khởi tạo canvas và vẽ bounding boxes
+function initCanvas(imgElement) {
+    console.log("Bắt đầu khởi tạo canvas...");
+    
+    // Kiểm tra ảnh đã tải xong chưa
+    if (!imgElement.complete || imgElement.naturalWidth === 0) {
+        setTimeout(() => initCanvas(imgElement), 100);
+        return;
+    }
+    
+    const canvasElement = document.getElementById('bboxCanvas');
+    
+    // Lấy kích thước thật của ảnh
+    originalWidth = imgElement.naturalWidth || IMAGE_WIDTH;
+    originalHeight = imgElement.naturalHeight || IMAGE_HEIGHT;
+    
+    // Lấy kích thước hiển thị của ảnh
+    const displayWidth = imgElement.clientWidth;
+    const displayHeight = imgElement.clientHeight;
+    
+    // Tính tỷ lệ scale
+    imageScale = Math.min(displayWidth / originalWidth, displayHeight / originalHeight);
+    
+    console.log(`Kích thước ảnh: ${originalWidth}x${originalHeight}`);
+    console.log(`Kích thước hiển thị: ${displayWidth}x${displayHeight}`);
+    console.log(`Tỷ lệ scale: ${imageScale}`);
+    
+    // Đặt kích thước canvas bằng kích thước hiển thị của ảnh
+    canvasElement.width = displayWidth;
+    canvasElement.height = displayHeight;
+    
+    // Khởi tạo Fabric.js canvas
+    canvas = new fabric.Canvas(canvasElement, {
+        selection: true,
+        preserveObjectStacking: true,
+        backgroundColor: 'transparent',
+        fireRightClick: true,
+        fireMiddleClick: true,
+        stopContextMenu: true,
+        allowTouchScrolling: true,
+        containerClass: 'bbox-canvas-container'
+    });
+    
+    // Vẽ bounding boxes từ dữ liệu
+    drawBoundingBoxesFromData();
+    
+    // Thiết lập sự kiện
+    setupCanvasEvents();
+    
+    // Lưu trạng thái ban đầu vào lịch sử
+    saveToHistory();
+    
+    // Cập nhật số lượng bounding boxes
+    updateBboxCount();
+    
+    // Thêm sự kiện resize window
+    window.addEventListener('resize', handleResize);
+    
+    console.log("Canvas đã được khởi tạo thành công");
+    
+    // Đảm bảo canvas wrapper có pointer-events auto khi ở chế độ vẽ
+    document.getElementById('canvasWrapper').style.pointerEvents = 'auto';
+}
+
+// Hàm xử lý resize window
+function handleResize() {
+    if (!canvas) return;
+    
+    const imgElement = document.getElementById('sourceImage');
+    if (!imgElement.complete) return;
+    
+    const canvasElement = document.getElementById('bboxCanvas');
+    
+    // Tính lại scale
+    const displayWidth = imgElement.clientWidth;
+    const displayHeight = imgElement.clientHeight;
+    imageScale = Math.min(displayWidth / originalWidth, displayHeight / originalHeight);
+    
+    // Resize canvas
+    canvasElement.width = displayWidth;
+    canvasElement.height = displayHeight;
+    canvas.setDimensions({ width: displayWidth, height: displayHeight });
+    
+    // Cập nhật tất cả bounding boxes với scale mới
+    canvas.getObjects().forEach(obj => {
+        if (obj.type === 'group' && obj.classId !== undefined) {
+            const bbox = bboxes.find(b => b.element === obj);
+            if (bbox) {
+                const scaledX = (bbox.x - bbox.width/2) * originalWidth * imageScale;
+                const scaledY = (bbox.y - bbox.height/2) * originalHeight * imageScale;
+                const scaledW = bbox.width * originalWidth * imageScale;
+                const scaledH = bbox.height * originalHeight * imageScale;
+                
+                obj.set({
+                    left: scaledX,
+                    top: scaledY,
+                    width: scaledW,
+                    height: scaledH,
+                    scaleX: 1,
+                    scaleY: 1
+                });
+                
+                // Cập nhật label position
+                const label = obj.item(1);
+                if (label) {
+                    label.set({
+                        left: scaledX + 5,
+                        top: scaledY + 5
+                    });
+                }
+            }
+        }
+    });
+    
+    canvas.renderAll();
+}
+
+// Hàm vẽ bounding boxes từ dữ liệu
+function drawBoundingBoxesFromData() {
+    console.log("Dữ liệu bbox nhận được:", BBOX_LINES);
+    
+    if (BBOX_LINES && BBOX_LINES.length > 0) {
+        BBOX_LINES.forEach((bboxStr, index) => {
+            try {
+                const parts = bboxStr.trim().split(/\s+/);
+                if (parts.length >= 5) {
+                    const classId = parseInt(parts[0]);
+                    const xCenter = parseFloat(parts[1]);
+                    const yCenter = parseFloat(parts[2]);
+                    const width = parseFloat(parts[3]);
+                    const height = parseFloat(parts[4]);
+                    
+                    console.log(`Vẽ bbox ${index}: class=${classId}, x=${xCenter}, y=${yCenter}, w=${width}, h=${height}`);
+                    
+                    // Chuyển từ YOLO format sang pixel trên ảnh gốc
+                    const x = (xCenter - width/2) * originalWidth;
+                    const y = (yCenter - height/2) * originalHeight;
+                    const w = width * originalWidth;
+                    const h = height * originalHeight;
+                    
+                    console.log(`Bbox ${index} pixel: x=${x}, y=${y}, w=${w}, h=${h}`);
+                    
+                    // Scale theo kích thước hiển thị
+                    const scaledX = x * imageScale;
+                    const scaledY = y * imageScale;
+                    const scaledW = w * imageScale;
+                    const scaledH = h * imageScale;
+                    
+                    console.log(`Bbox ${index} scaled: x=${scaledX}, y=${scaledY}, w=${scaledW}, h=${scaledH}`);
+                    
+                    // Kiểm tra tọa độ có hợp lệ không
+                    if (scaledX >= 0 && scaledY >= 0 && scaledW > 0 && scaledH > 0) {
+                        // Tạo rectangle
+                        const rect = new fabric.Rect({
+                            left: scaledX,
+                            top: scaledY,
+                            width: scaledW,
+                            height: scaledH,
+                            fill: 'rgba(255, 0, 0, 0.1)',
+                            stroke: 'red',
+                            strokeWidth: 2,
+                            selectable: true,
+                            hasControls: true,
+                            hasBorders: true,
+                            hasRotatingPoint: false,
+                            lockRotation: true,
+                            classId: classId,
+                            strokeUniform: true,
+                            originX: 'left',
+                            originY: 'top'
+                        });
+                        
+                        // Thêm label
+                        const label = new fabric.Text(SPECIES_LABEL, {
+                            left: scaledX + 5,
+                            top: scaledY + 5,
+                            fontSize: 14,
+                            fill: 'white',
+                            backgroundColor: 'red',
+                            padding: 2,
+                            selectable: false
+                        });
+                        
+                        // Tạo group chứa rect và label
+                        const group = new fabric.Group([rect, label], {
+                            selectable: true,
+                            hasControls: true,
+                            hasBorders: true,
+                            hasRotatingPoint: false,
+                            lockRotation: true,
+                            classId: classId,
+                            originX: 'left',
+                            originY: 'top'
+                        });
+                        
+                        canvas.add(group);
+                        bboxes.push({
+                            element: group,
+                            classId: classId,
+                            x: xCenter,
+                            y: yCenter,
+                            width: width,
+                            height: height
+                        });
+                    } else {
+                        console.warn(`Bbox ${index} có tọa độ không hợp lệ`);
+                    }
+                }
+            } catch (error) {
+                console.error(`Lỗi khi vẽ bbox ${index}:`, error);
+            }
+        });
+        console.log(`Đã vẽ ${bboxes.length} bounding boxes`);
+    } else {
+        console.log("Không có dữ liệu bounding box để vẽ");
+    }
+}
+
+// Hàm thiết lập sự kiện cho canvas
+function setupCanvasEvents() {
+    if (!canvas) return;
+    
+    // Sự kiện khi thay đổi bounding box
+    canvas.on('object:modified', function(e) {
+        const obj = e.target;
+        updateBboxData(obj);
+        updateBboxCount();
+        saveToHistory();
+    });
+    
+    canvas.on('object:moving', function(e) {
+        const obj = e.target;
+        updateBboxData(obj);
+    });
+    
+    canvas.on('object:scaling', function(e) {
+        const obj = e.target;
+        updateBboxData(obj);
+    });
+    
+    // Sự kiện khi thêm/xóa object
+    canvas.on('object:added', function(e) {
+        if (e.target !== rect) { // Không tính rectangle khi đang vẽ
+            updateBboxCount();
+            saveToHistory();
+        }
+    });
+    
+    canvas.on('object:removed', function(e) {
+        // Xóa khỏi mảng bboxes
+        bboxes = bboxes.filter(bbox => bbox.element !== e.target);
+        updateBboxCount();
+        saveToHistory();
+    });
+    
+    // Sự kiện chuột cho chế độ vẽ
+    canvas.on('mouse:down', function(options) {
+        if (!isDrawingMode) return;
+        
+        const pointer = canvas.getPointer(options.e);
+        startX = pointer.x;
+        startY = pointer.y;
+        
+        rect = new fabric.Rect({
+            left: startX,
+            top: startY,
+            width: 0,
+            height: 0,
+            fill: 'rgba(0, 255, 0, 0.1)',
+            stroke: 'green',
+            strokeWidth: 2,
+            strokeDashArray: [5, 5],
+            selectable: false,
+            hasControls: false,
+            hasBorders: false
+        });
+        
+        canvas.add(rect);
+    });
+    
+    canvas.on('mouse:move', function(options) {
+        if (!isDrawingMode || !rect) return;
+        
+        const pointer = canvas.getPointer(options.e);
+        const width = pointer.x - startX;
+        const height = pointer.y - startY;
+        
+        rect.set({
+            width: Math.abs(width),
+            height: Math.abs(height),
+            left: width > 0 ? startX : pointer.x,
+            top: height > 0 ? startY : pointer.y
+        });
+        
+        canvas.renderAll();
+    });
+    
+    canvas.on('mouse:up', function(options) {
+        if (!isDrawingMode || !rect) return;
+        
+        const pointer = canvas.getPointer(options.e);
+        const width = Math.abs(pointer.x - startX);
+        const height = Math.abs(pointer.y - startY);
+        
+        if (width > 10 && height > 10) {
+            // Tạo bounding box mới
+            const classId = parseInt(document.getElementById('species_Id').value) || 0;
+            const left = rect.left / imageScale;
+            const top = rect.top / imageScale;
+            const w = rect.width / imageScale;
+            const h = rect.height / imageScale;
+            
+            // Chuyển sang YOLO format
+            const xCenter = (left + w/2) / originalWidth;
+            const yCenter = (top + h/2) / originalHeight;
+            const bboxWidth = w / originalWidth;
+            const bboxHeight = h / originalHeight;
+            
+            // Tạo rectangle thật
+            const finalRect = new fabric.Rect({
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                fill: 'rgba(255, 0, 0, 0.1)',
+                stroke: 'red',
+                strokeWidth: 2,
+                selectable: true,
+                hasControls: true,
+                hasBorders: true,
+                hasRotatingPoint: false,
+                lockRotation: true,
+                classId: classId,
+                strokeUniform: true
+            });
+            
+            // Thêm label
+            const label = new fabric.Text(SPECIES_LABEL, {
+                left: rect.left + 5,
+                top: rect.top + 5,
+                fontSize: 14,
+                fill: 'white',
+                backgroundColor: 'red',
+                padding: 2,
+                selectable: false
+            });
+            
+            // Tạo group
+            const group = new fabric.Group([finalRect, label], {
+                selectable: true,
+                hasControls: true,
+                hasBorders: true,
+                hasRotatingPoint: false,
+                lockRotation: true,
+                classId: classId
+            });
+            
+            // Xóa rectangle tạm và thêm group mới
+            canvas.remove(rect);
+            canvas.add(group);
+            
+            // Thêm vào mảng bboxes
+            bboxes.push({
+                element: group,
+                classId: classId,
+                x: xCenter,
+                y: yCenter,
+                width: bboxWidth,
+                height: bboxHeight
+            });
+            
+            updateBboxCount();
+            saveToHistory();
+        } else {
+            // Xóa rectangle tạm nếu quá nhỏ
+            canvas.remove(rect);
+        }
+        
+        rect = null;
+        canvas.renderAll();
+    });
+    
+    // Xóa bounding box khi nhấn Delete
+    document.addEventListener('keydown', function(e) {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && canvas) {
+            const activeObject = canvas.getActiveObject();
+            if (activeObject) {
+                // Xóa khỏi mảng bboxes
+                bboxes = bboxes.filter(bbox => bbox.element !== activeObject);
+                canvas.remove(activeObject);
+                canvas.discardActiveObject();
+                canvas.renderAll();
+                updateBboxCount();
+                saveToHistory();
+            }
+        }
+        
+        // Undo/Redo với Ctrl+Z và Ctrl+Y
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key === 'z' || e.key === 'Z') {
+                e.preventDefault();
+                undo();
+            } else if (e.key === 'y' || e.key === 'Y') {
+                e.preventDefault();
+                redo();
+            }
+        }
+    });
+}
+
+// Hàm cập nhật dữ liệu bbox khi có thay đổi
+function updateBboxData(obj) {
+    // Tìm bbox tương ứng trong mảng
+    const bboxIndex = bboxes.findIndex(b => b.element === obj);
+    if (bboxIndex !== -1) {
+        // Lấy tọa độ và kích thước đã scale
+        const scaledLeft = obj.left;
+        const scaledTop = obj.top;
+        const scaledWidth = obj.width * obj.scaleX;
+        const scaledHeight = obj.height * obj.scaleY;
+        
+        // Chuyển về tọa độ gốc
+        const x = scaledLeft / imageScale;
+        const y = scaledTop / imageScale;
+        const w = scaledWidth / imageScale;
+        const h = scaledHeight / imageScale;
+        
+        // Chuyển sang YOLO format
+        const xCenter = (x + w/2) / originalWidth;
+        const yCenter = (y + h/2) / originalHeight;
+        const width = w / originalWidth;
+        const height = h / originalHeight;
+        
+        // Cập nhật dữ liệu
+        bboxes[bboxIndex] = {
+            ...bboxes[bboxIndex],
+            x: xCenter,
+            y: yCenter,
+            width: width,
+            height: height
+        };
+        
+        // Cập nhật label nếu có
+        if (obj.type === 'group') {
+            const label = obj.item(1);
+            if (label && label.type === 'text') {
+                label.set({
+                    left: scaledLeft + 5,
+                    top: scaledTop + 5
+                });
+            }
+        }
+    }
+}
+
+// Hàm lấy dữ liệu bbox từ canvas
+function getBboxData() {
+    const bboxLines = [];
+    
+    bboxes.forEach(bbox => {
+        const line = `${bbox.classId} ${bbox.x.toFixed(6)} ${bbox.y.toFixed(6)} ${bbox.width.toFixed(6)} ${bbox.height.toFixed(6)}`;
+        bboxLines.push(line);
+    });
+    
+    return bboxLines;
+}
+
+// Hàm cập nhật số lượng bounding boxes
+function updateBboxCount() {
+    const count = bboxes.length;
+    document.getElementById('bboxCount').textContent = `${count} bounding boxes`;
+}
+
+// Hàm lưu vào lịch sử
+function saveToHistory() {
+    // Chỉ lưu tối đa 50 bước
+    if (history.length > 50) {
+        history.shift();
+        if (historyIndex > 0) historyIndex--;
+    }
+    
+    // Lưu trạng thái hiện tại
+    const state = {
+        bboxes: JSON.parse(JSON.stringify(bboxes)),
+        canvasObjects: canvas.toJSON()
+    };
+    
+    // Xóa các bước sau current index
+    history = history.slice(0, historyIndex + 1);
+    history.push(state);
+    historyIndex = history.length - 1;
+    
+    console.log(`Lịch sử: ${history.length} bước, index: ${historyIndex}`);
+}
+
+// Hàm undo
+function undo() {
+    if (historyIndex > 0) {
+        historyIndex--;
+        restoreState(history[historyIndex]);
+        console.log(`Undo đến bước ${historyIndex}`);
+    } else {
+        console.log("Không thể undo thêm");
+    }
+}
+
+// Hàm redo
+function redo() {
+    if (historyIndex < history.length - 1) {
+        historyIndex++;
+        restoreState(history[historyIndex]);
+        console.log(`Redo đến bước ${historyIndex}`);
+    } else {
+        console.log("Không thể redo thêm");
+    }
+}
+
+// Hàm khôi phục trạng thái
+function restoreState(state) {
+    // Xóa tất cả objects hiện tại
+    canvas.clear();
+    bboxes = [];
+    
+    // Khôi phục bboxes từ state
+    if (state.bboxes && Array.isArray(state.bboxes)) {
+        state.bboxes.forEach(bboxData => {
+            try {
+                // Tạo lại từ dữ liệu đã lưu
+                const x = (bboxData.x - bboxData.width/2) * originalWidth;
+                const y = (bboxData.y - bboxData.height/2) * originalHeight;
+                const w = bboxData.width * originalWidth;
+                const h = bboxData.height * originalHeight;
+                
+                const scaledX = x * imageScale;
+                const scaledY = y * imageScale;
+                const scaledW = w * imageScale;
+                const scaledH = h * imageScale;
+                
+                const rect = new fabric.Rect({
+                    left: scaledX,
+                    top: scaledY,
+                    width: scaledW,
+                    height: scaledH,
+                    fill: 'rgba(255, 0, 0, 0.1)',
+                    stroke: 'red',
+                    strokeWidth: 2,
+                    selectable: true,
+                    hasControls: true,
+                    hasBorders: true,
+                    hasRotatingPoint: false,
+                    lockRotation: true,
+                    classId: bboxData.classId,
+                    strokeUniform: true
+                });
+                
+                const label = new fabric.Text(SPECIES_LABEL, {
+
+                    left: scaledX + 5,
+                    top: scaledY + 5,
+                    fontSize: 14,
+                    fill: 'white',
+                    backgroundColor: 'red',
+                    padding: 4,
+                    selectable: false,
+                    fontWeight: 'bold'
+                });
+                
+                const group = new fabric.Group([rect, label], {
+                    selectable: true,
+                    hasControls: true,
+                    hasBorders: true,
+                    hasRotatingPoint: false,
+                    lockRotation: true,
+                    classId: bboxData.classId
+                });
+                
+                canvas.add(group);
+                bboxes.push({
+                    element: group,
+                    classId: bboxData.classId,
+                    x: bboxData.x,
+                    y: bboxData.y,
+                    width: bboxData.width,
+                    height: bboxData.height
+                });
+            } catch (error) {
+                console.error('Lỗi khi khôi phục bbox:', error);
+            }
+        });
+    }
+    
+    canvas.renderAll();
+    updateBboxCount();
+}
+
+// Hàm bật/tắt chế độ vẽ
+function toggleDrawMode() {
+    isDrawingMode = !isDrawingMode;
+    const drawModeBtn = document.getElementById('drawModeBtn');
+    const drawModeStatus = document.getElementById('drawModeStatus');
+    const canvasWrapper = document.getElementById('canvasWrapper');
+    
+    if (isDrawingMode) {
+        drawModeBtn.classList.remove('btn-outline-success');
+        drawModeBtn.classList.add('btn-success');
+        drawModeStatus.classList.remove('d-none');
+        canvas.selection = false;
+        canvas.defaultCursor = 'crosshair';
+        canvasWrapper.style.pointerEvents = 'auto';
+    } else {
+        drawModeBtn.classList.remove('btn-success');
+        drawModeBtn.classList.add('btn-outline-success');
+        drawModeStatus.classList.add('d-none');
+        canvas.selection = true;
+        canvas.defaultCursor = 'default';
+        canvasWrapper.style.pointerEvents = 'none';
+    }
+}
+
+// Hàm xóa tất cả bounding boxes
+function clearAllBboxes() {
+    if (confirm("Bạn có chắc chắn muốn xóa tất cả bounding boxes?")) {
+        bboxes = [];
+        canvas.clear();
+        canvas.renderAll();
+        updateBboxCount();
+        saveToHistory();
+    }
+}
+
+// Hàm nhận dạng tự động
+function autoDetect() {
+    const speciesId = document.getElementById('species_Id').value;
+    if (!speciesId) {
+        alert("Vui lòng chọn loài côn trùng trước!");
+        return;
+    }
+    
+    if (confirm("Bạn có muốn chạy nhận dạng tự động? Hệ thống sẽ sử dụng YOLO để phát hiện côn trùng.")) {
+        // Hiển thị loading
+        const autoDetectBtn = document.getElementById('autoDetectBtn');
+        const originalText = autoDetectBtn.innerHTML;
+        autoDetectBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Đang nhận dạng...';
+        autoDetectBtn.disabled = true;
+        
+        // Gọi API nhận dạng tự động
+        fetch(`/api/auto-detect/${REQUEST_ID}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({
+                species_id: speciesId
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Xóa bounding boxes cũ
+                bboxes = [];
+                canvas.clear();
+                
+                // Vẽ bounding boxes mới
+                if (data.bboxes && data.bboxes.length > 0) {
+                    data.bboxes.forEach(bboxData => {
+                        // Tương tự như hàm drawBoundingBoxesFromData
+                        const x = (bboxData.x - bboxData.width/2) * originalWidth;
+                        const y = (bboxData.y - bboxData.height/2) * originalHeight;
+                        const w = bboxData.width * originalWidth;
+                        const h = bboxData.height * originalHeight;
+                        
+                        const scaledX = x * imageScale;
+                        const scaledY = y * imageScale;
+                        const scaledW = w * imageScale;
+                        const scaledH = h * imageScale;
+                        
+                        const rect = new fabric.Rect({
+                            left: scaledX,
+                            top: scaledY,
+                            width: scaledW,
+                            height: scaledH,
+                            fill: 'rgba(255, 0, 0, 0.1)',
+                            stroke: 'red',
+                            strokeWidth: 2,
+                            selectable: true,
+                            hasControls: true,
+                            hasBorders: true,
+                            hasRotatingPoint: false,
+                            lockRotation: true,
+                            classId: bboxData.classId,
+                            strokeUniform: true
+                        });
+                        
+                        const label = new fabric.Text(SPECIES_LABEL, {
+
+                            left: scaledX + 5,
+                            top: scaledY + 5,
+                            fontSize: 14,
+                            fill: 'white',
+                            backgroundColor: 'red',
+                            padding: 2,
+                            selectable: false
+                        });
+                        
+                        const group = new fabric.Group([rect, label], {
+                            selectable: true,
+                            hasControls: true,
+                            hasBorders: true,
+                            hasRotatingPoint: false,
+                            lockRotation: true,
+                            classId: bboxData.classId
+                        });
+                        
+                        canvas.add(group);
+                        bboxes.push({
+                            element: group,
+                            classId: bboxData.classId,
+                            x: bboxData.x,
+                            y: bboxData.y,
+                            width: bboxData.width,
+                            height: bboxData.height
+                        });
+                    });
+                    
+                    canvas.renderAll();
+                    updateBboxCount();
+                    saveToHistory();
+                    
+                    alert(`Đã phát hiện được ${data.bboxes.length} bounding boxes!`);
+                } else {
+                    alert("Không phát hiện được côn trùng trong ảnh.");
+                }
+            } else {
+                alert("Lỗi nhận dạng: " + (data.error || 'Không xác định'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert("Có lỗi xảy ra khi nhận dạng tự động!");
+        })
+        .finally(() => {
+            // Khôi phục nút
+            autoDetectBtn.innerHTML = originalText;
+            autoDetectBtn.disabled = false;
+        });
+    }
+}
+
+// Xử lý khi trang đã tải xong
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("Trang đã tải xong");
+    
+    // Gán sự kiện cho các nút toolbar
+    document.getElementById("undoBtn")?.addEventListener("click", undo);
+    document.getElementById("redoBtn")?.addEventListener("click", redo);
+    document.getElementById("autoDetectBtn")?.addEventListener("click", autoDetect);
+    document.getElementById("clearAllBtn")?.addEventListener("click", clearAllBboxes);
+    document.getElementById("drawModeBtn")?.addEventListener("click", toggleDrawMode);
+    
+    // Xử lý nút Xét duyệt
+    document.getElementById("acceptBtn")?.addEventListener("click", function() {
+        const speciesId = parseInt(document.getElementById("species_Id").value, 10);
+        const description = document.getElementById("description").value;
+        
+        // Lấy dữ liệu bounding boxes
+        const bboxLines = getBboxData();
+        
+        console.log("Gửi bbox data:", bboxLines);
+        
+        // Lưu vào hidden field
+        document.getElementById("hiddenBboxData").value = JSON.stringify(bboxLines);
+        
+        // Gửi yêu cầu lưu bbox
+        fetch("{% url 'save_bbox_verify' request_item.request_img_id %}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
+            body: JSON.stringify({
+                bbox_lines: bboxLines,
+                species_id: speciesId,
+                description: description,
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Đặt action và submit form
+                document.getElementById("actionInput").value = "accept";
+                document.getElementById("verifyForm").submit();
+            } else {
+                showModal("Có lỗi xảy ra khi lưu bounding boxes: " + (data.error || 'Unknown error'), true);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showModal("Có lỗi xảy ra khi lưu bounding boxes!", true);
+        });
+    });
+    
+    // Xử lý nút Từ chối
+    document.getElementById("rejectBtn")?.addEventListener("click", function() {
+        if (confirm("Bạn có chắc chắn muốn từ chối hình ảnh này?")) {
+            document.getElementById("actionInput").value = "reject";
+            document.getElementById("verifyForm").submit();
+        }
+    });
+    
+    // Hiển thị modal thông báo
+    function showModal(message, isError = false) {
+        const modalMessage = document.getElementById('modalMessage');
+        const modal = new bootstrap.Modal(document.getElementById('resultModal'));
+        
+        modalMessage.textContent = message;
+        if (isError) {
+            modalMessage.classList.add('text-danger');
+        } else {
+            modalMessage.classList.remove('text-danger');
+        }
+        
+        modal.show();
+    }
+    
+    // Xử lý modal kết quả nếu có
+    const verifyResult = "{{ verify_result }}";
+    if (verifyResult) {
+        let message = "";
+        switch(verifyResult) {
+            case "verified":
+                message = "Hình ảnh đã được xét duyệt thành công!";
+                break;
+            case "rejected":
+                message = "Hình ảnh đã bị từ chối!";
+                break;
+            case "pending":
+                message = "Hình ảnh đã được xét duyệt, cần thêm chuyên gia khác.";
+                break;
+            default:
+                message = "Thao tác đã được thực hiện!";
+        }
+        
+        showModal(message);
+        
+        document.getElementById('modal-ok-btn').addEventListener('click', function() {
+            window.location.href = "{% url 'cv_verify_new_image' %}";
+        });
+    }
+    
+    // Khởi tạo canvas khi ảnh đã load
+    const img = document.getElementById('sourceImage');
+    if (img.complete) {
+        initCanvas(img);
+    } else {
+        img.onload = function() {
+            initCanvas(this);
+        };
+    }
+});
+
+// Thêm tooltip hướng dẫn
+const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl);
+});
+</script>
+
+<style>
+#imageWrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    background-color: #f8f9fa;
+}
+
+#canvasWrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2;
+}
+
+#bboxCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: auto;
+}
+
+#sourceImage {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    z-index: 1;
+}
+
+.toolbar {
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+    border: 1px solid #dee2e6;
+}
+
+.toolbar .btn {
+    min-width: 100px;
+}
+
+.toolbar .btn-group .btn {
+    min-width: auto;
+}
+
+.bbox-label {
+    background-color: rgba(255, 0, 0, 0.7);
+    color: white;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+#toolbarStatus {
+    font-size: 0.9rem;
+}
+
+#drawModeStatus {
+    margin-left: 10px;
+}
+
+@media (max-width: 768px) {
+    .toolbar {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .toolbar .btn, .toolbar .btn-group {
+        width: 100%;
+        margin-bottom: 5px;
+    }
+}
+</style>
+{% endblock %}

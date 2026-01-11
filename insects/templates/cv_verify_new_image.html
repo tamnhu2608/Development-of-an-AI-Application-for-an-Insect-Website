@@ -1,0 +1,71 @@
+{% extends "template_v2.html" %}
+{% load custom_filters %}
+{% block content %}
+<div class="container py-3">
+    <div class="d-flex justify-content-center">
+        <p class="fw-bold fs-2">Xét duyệt đóng góp hình ảnh mới</p>
+    </div>
+    <div>
+        <hr>
+    </div>
+    <table class="table table-bordered table-striped">
+        <thead class="table-dark">
+            <tr align="center">
+                <th scope="col">#</th>
+                <th scope="col">Hình ảnh</th>
+                <th scope="col">Tên loài</th>
+                <th scope="col">Tên người dùng</th>
+                <th scope="col">Ngày gửi</th>
+                <th scope="col">Trạng thái</th>
+                <th scope="col">Hành động</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% if requests %}
+            {% for request in requests %}
+            <tr align="center">
+                <td>{{ request.index }}</td>
+                <td>
+                    <img src="{{ MEDIA_URL }}{{ request.url }}" class="thumbnail" alt="Ảnh đã đóng góp" width="100">
+                </td>
+                <td>{{ request.insects_id }}</td>
+                
+                <td>
+                    {% if request.user_id.first_name or request.user_id.last_name %}
+                        {{ request.user_id.last_name }} {{ request.user_id.first_name }}
+                    {% else %}
+                        {{ request.user_id.username }}
+                    {% endif %}
+                </td>
+                
+                <td>{{ request.request_time|date:"Y-m-d H:i:s" }}</td>
+                <td>
+                    <span class="badge bg-warning text-dark">
+                        {{ request.status|format_status }}
+                    </span>
+                </td>
+                <td>
+                    <a href="{% url 'verify_new_image_request' request.request_img_id  %}" class="btn btn-outline-success d-inline-flex align-items-center justify-content-center">
+                        <i class="bi bi-clipboard-check"></i>
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        {%else%}
+            <tr>
+                <td colspan="7" style="text-align: center;">
+                    Danh sách trống...
+                </td>
+            </tr>
+        {%endif%}
+        </tbody>
+    </table>
+<!--    {% if messages %}-->
+<!--    <div class="alert-container">-->
+<!--        {% for message in messages %}-->
+<!--            <div class="alert alert-success">{{ message }}</div>-->
+<!--        {% endfor %}-->
+<!--    </div>-->
+<!--{% endif %}-->
+</div>
+{% endblock %}

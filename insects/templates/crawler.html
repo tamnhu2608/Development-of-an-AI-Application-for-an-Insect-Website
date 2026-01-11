@@ -1,0 +1,500 @@
+{% extends "template_v2.html" %}
+{% block content %}
+<style>
+    .custom-card {
+        border: 1px solid #ccc;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+</style>
+
+<div style="background-color: #F5F5F5;">
+    <div class="container py-3">
+        <div class="d-flex justify-content-center">
+            <p class="fw-bold fs-2">Thu thập hình ảnh</p>
+        </div>
+        <hr>
+        <div class="container d-flex justify-content-center align-items-center mt-3">
+            <div class="col-10">
+                <div class="row justify-content-center">
+                    <form id="crawler-form" class="col-12 col-md-7" method="post" action="{% url 'crawl_images' %}">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label for="insectSelect" class="form-label">Chọn côn trùng</label>
+                            <select class="form-select" id="insectSelect" name="insectSelect">
+                                {% for species in species_list %}
+                                    {% if species.ename %}
+                                        <option value="{{ species.insects_id }}">{{ species.ename }} - {{ species.name }}</option>
+                                    {% else %}
+                                        <option value="{{ species.insects_id }}">{{ species.name }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-floating mb-3">
+                            <input type="number" class="form-control" name="quantity" id="quantity" placeholder="Quantity" value="1" min="1">
+                            <label for="quantity">Số lượng</label>
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary pt-3 pb-3">Thực hiện</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div id="performSpinner" class="text-center mt-4" style="display: none;">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Đang xử lý...</span>
+            </div>
+            <p class="mt-2">Đang xử lý, vui lòng chờ...</p>
+        </div>
+
+        <!--<div class="d-flex justify-content-center">
+            <p class="fw-bold fs-2">Hình ảnh</p>
+        </div>-->
+        <hr>
+        <div class="row" id="image-container"></div>
+        <div id="error-message" class="text-danger mt-3" style="display: none;"></div>
+        <hr>
+    </div>
+</div>
+
+<!-- Modal chỉnh sửa bbox -->
+<div class="modal fade" id="bboxModal" tabindex="-1" aria-labelledby="bboxModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header" align="center">
+                <p class="modal-title fw-bold fs-2" id="bboxModalLabel" >Chỉnh sửa Bounding Box</p>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Đóng"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="modalInsectSelect" class="form-label">Chọn loài côn trùng</label>
+                            <select class="form-select" id="modalInsectSelect">
+                                {% for species in species_list %}
+                                    {% if species.ename %}
+                                        <option value="{{ species.insects_id }}">{{ species.ename }} - {{ species.name }}</option>
+                                    {% else %}
+                                        <option value="{{ species.insects_id }}">{{ species.name }}</option>
+                                    {% endif %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="description" class="form-label">Mô tả</label>
+                            <textarea class="form-control" id="description" rows="4" placeholder="Nhập mô tả cho hình ảnh"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-primary" id="add-bbox">Thêm Bounding Box</button>
+                        </div>
+                    </div>
+                    <div class="col-md-6 d-flex justify-content-center">
+                        <canvas id="bboxCanvas" class="border border-secondary shadow rounded"></canvas>
+                    </div>
+                </div>
+                <div id="bbox-warning" class="text-warning mt-2" style="display: none;">
+                    Không detect được côn trùng, vui lòng vẽ bounding box thủ công.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" id="save-bbox">Xác nhận</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.3.0/fabric.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    let currentImageUrl = "";
+    let currentIdCrawler = "";
+    let currentRequestImgId = null;
+    let scaleFactor = 1;
+    let originalWidth = 1, originalHeight = 1;
+    let canvas = null;
+
+    // Ẩn spinner ban đầu
+    const spinner = document.getElementById("performSpinner");
+    spinner.style.display = "none";
+
+    // Lấy form và các phần tử liên quan
+    const form = document.getElementById("crawler-form");
+    const submitButton = form.querySelector('button[type="submit"]');
+    const errorMessage = document.getElementById("error-message");
+    const imageContainer = document.getElementById("image-container");
+
+    // Sự kiện submit form
+    form.addEventListener("submit", function(event) {
+        event.preventDefault();
+
+        // Hiển thị spinner, vô hiệu hóa nút submit
+        spinner.style.display = "block";
+        submitButton.disabled = true;
+        submitButton.textContent = "Đang thực hiện...";
+        errorMessage.style.display = "none";
+        imageContainer.innerHTML = ""; //Xóa nội dung của phần cào ảnh trước đó
+
+        // Thu thập dữ liệu form
+        const formData = new FormData(form);
+        const url = form.getAttribute("action");
+
+        // Gửi yêu cầu AJAX
+        fetch(url, {
+            method: "POST",
+            body: formData,
+            headers: {
+                "X-CSRFToken": "{{ csrf_token }}"
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Ẩn spinner và khôi phục nút submit
+            spinner.style.display = "none";
+            submitButton.disabled = false;
+            submitButton.textContent = "Thực hiện";
+
+            if (data.success) {
+                const quantity = parseInt(form.querySelector("#quantity").value);
+                const imagesToDisplay = data.images.slice(0, quantity);
+
+                imagesToDisplay.forEach((image, index) => {
+                    const imageStatus = image.exists
+                        ? `Hình ảnh đã tồn tại, trạng thái: ${image.upload_status}`
+                        : "Chưa được upload";
+                    const uploadButtonText = image.exists ? "Đã tải lên" : "Upload";
+                    const uploadButtonDisabled = image.exists ? "disabled" : "";
+
+                    const imageCard = `
+                        <div class="row g-0 mb-4 align-items-stretch custom-card">
+                            <div class="col-md-4 bg-white text-center">
+                                <img src="${image.url}" alt="Image ${index + 1}" style="max-height: 200px; width: auto;">
+                            </div>
+                            <div class="col-md-8">
+                                <div class="card h-100 border-1">
+                                    <div class="card-body d-flex flex-column justify-content-between">
+                                        <div>
+                                            <p class="card-title fw-bold fs-5">Thông tin hình ảnh</p>
+                                            <p class="card-text">
+                                                <strong>ID:</strong> ${image.img_id}<br>
+                                                <strong>URL:</strong> <a href="${image.url}" target="_blank">${image.url}</a><br>
+                                                <strong>Thời gian cào:</strong> ${image.created_date}<br>
+                                                <strong>Trạng thái:</strong> ${imageStatus}
+                                            </p>
+                                            <div class="d-flex justify-content-end">
+                                                <button class="btn btn-primary btn-sm upload-btn ms-2" data-url="${image.url}" data-img-id="${image.img_id}" ${uploadButtonDisabled}>${uploadButtonText}</button>
+                                                <button class="btn btn-danger btn-sm delete-btn ms-2" data-url="${image.url}" data-id="${image.img_id}">Xóa</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    imageContainer.insertAdjacentHTML("beforeend", imageCard);
+                });
+            } else {
+                errorMessage.textContent = data.error;
+                errorMessage.style.display = "block";
+            }
+        })
+        .catch(error => {
+            spinner.style.display = "none";
+            submitButton.disabled = false;
+            submitButton.textContent = "Thực hiện";
+            console.error("Lỗi AJAX crawl_images:", error);
+            errorMessage.textContent = "Lỗi khi cào ảnh: " + error.message;
+            errorMessage.style.display = "block";
+        });
+    });
+
+    // Xử lý sự kiện cho nút upload
+    document.addEventListener("click", function(event) {
+        if (event.target.classList.contains("upload-btn")) {
+            const button = event.target;
+            const imgUrl = button.dataset.url;
+            const idCrawler = button.dataset.imgId;
+            currentImageUrl = imgUrl;
+            currentIdCrawler = idCrawler;
+            const speciesId = form.querySelector("#insectSelect").value;
+
+            // Kiểm tra dữ liệu trước khi gửi
+            if (!speciesId) {
+                alert("Vui lòng chọn côn trùng trước khi upload.");
+                return;
+            }
+            if (!imgUrl || !idCrawler) {
+                alert("Dữ liệu hình ảnh không hợp lệ.");
+                return;
+            }
+
+            // Thay đổi trạng thái nút
+            button.textContent = "Đang tải lên...";
+            button.disabled = true;
+            button.classList.remove("btn-primary");
+            button.classList.add("btn-secondary");
+
+            // Tạo FormData để gửi dữ liệu
+            const formData = new FormData();
+            formData.append("img_url", imgUrl);
+            formData.append("species_id", speciesId);
+            formData.append("id_crawler", idCrawler);
+            formData.append("csrfmiddlewaretoken", "{{ csrf_token }}");
+
+            // Gửi yêu cầu AJAX cho upload
+            fetch("/upload_image/", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success && data.bbox_image_url) {
+                    currentRequestImgId = data.local_path; // Sử dụng local_path làm ID tạm
+                    const bboxModal = new bootstrap.Modal(document.getElementById("bboxModal"));
+                    bboxModal.show();
+                    initCanvasEditor(data.bbox_data || [], data.img_download, speciesId);
+                    const bboxWarning = document.getElementById("bbox-warning");
+                    if (!data.bbox_data || data.bbox_data.length === 0) {
+                        bboxWarning.style.display = "block";
+                    } else {
+                        bboxWarning.style.display = "none";
+                    }
+                    button.textContent = "Đã tải lên";
+                    button.disabled = true;
+                } else {
+                    alert(data.message || "Không có dữ liệu bbox");
+                    button.textContent = "Tải lên thất bại";
+                    button.disabled = false;
+                    button.classList.add("btn-primary");
+                    button.classList.remove("btn-secondary");
+                }
+            })
+            .catch(error => {
+                console.error("Lỗi AJAX detect_insect_view:", error);
+                alert("Lỗi khi tải bbox: " + error.message);
+                button.textContent = "Tải lên thất bại";
+                button.disabled = false;
+                button.classList.add("btn-primary");
+                button.classList.remove("btn-secondary");
+            });
+        }
+    });
+
+    // Hàm convert YOLO sang pixel (giữ nguyên)
+    function convertYOLOtoPixel(bbox, imgWidth, imgHeight) {
+        let [cls, x_center_norm, y_center_norm, width_norm, height_norm] = bbox.split(" ").map(parseFloat);
+        return {
+            cls: cls,
+            x: (x_center_norm - width_norm / 2) * imgWidth,
+            y: (y_center_norm - height_norm / 2) * imgHeight,
+            w: width_norm * imgWidth,
+            h: height_norm * imgHeight
+        };
+    }
+
+    // Hàm khởi tạo canvas editor (giữ nguyên)
+    function initCanvasEditor(bboxData, imgUrl, defaultSpeciesId) {
+        const canvasElement = document.getElementById("bboxCanvas");
+        if (canvas) {
+            canvas.dispose();
+            canvas = null;
+        }
+
+        canvas = new fabric.Canvas(canvasElement);
+        canvas.clear();
+        canvas.setBackgroundImage(null, canvas.renderAll.bind(canvas));
+
+        let maxSize = 500;
+        fabric.Image.fromURL(imgUrl, function(oImg) {
+            if (!oImg) {
+                console.error("Không tải được ảnh:", imgUrl);
+                alert("Không thể tải ảnh cho canvas.");
+                return;
+            }
+
+            originalWidth = oImg.width;
+            originalHeight = oImg.height;
+            scaleFactor = Math.min(maxSize / originalWidth, maxSize / originalHeight);
+
+            if (originalWidth <= 0 || originalHeight <= 0) {
+                console.error("Kích thước ảnh không hợp lệ:", originalWidth, originalHeight);
+                alert("Ảnh có kích thước không hợp lệ.");
+                return;
+            }
+
+            oImg.set({
+                left: 0,
+                top: 0,
+                scaleX: scaleFactor,
+                scaleY: scaleFactor,
+                selectable: false
+            });
+
+            canvas.setBackgroundImage(oImg, canvas.renderAll.bind(canvas));
+            canvas.setWidth(originalWidth * scaleFactor);
+            canvas.setHeight(originalHeight * scaleFactor);
+
+            if (bboxData && bboxData.length > 0) {
+                bboxData.forEach(bbox => {
+                    let { cls, x, y, w, h } = convertYOLOtoPixel(bbox, originalWidth, originalHeight);
+                    let rect = new fabric.Rect({
+                        left: x * scaleFactor,
+                        top: y * scaleFactor,
+                        width: w * scaleFactor,
+                        height: h * scaleFactor,
+                        fill: "transparent",
+                        stroke: "red",
+                        strokeWidth: 2,
+                        selectable: true,
+                        hasRotatingPoint: true
+                    });
+                    rect.classLabel = cls;
+                    canvas.add(rect);
+                });
+            }
+
+            document.getElementById("modalInsectSelect").value = defaultSpeciesId;
+        }, { crossOrigin: "anonymous" });
+    }
+
+    // Sự kiện thêm bbox
+    document.getElementById("add-bbox").addEventListener("click", function() {
+        const speciesId = document.getElementById("modalInsectSelect").value;
+        const classId = parseInt(speciesId.replace("IP", "")) - 1;
+        if (isNaN(classId)) {
+            alert("Vui lòng chọn loài côn trùng trước khi thêm bounding box.");
+            return;
+        }
+
+        const rect = new fabric.Rect({
+            left: 50,
+            top: 50,
+            width: 100 * scaleFactor,
+            height: 100 * scaleFactor,
+            fill: "transparent",
+            stroke: "red",
+            strokeWidth: 2,
+            selectable: true,
+            hasRotatingPoint: true
+        });
+        rect.classLabel = classId;
+        canvas.add(rect);
+        canvas.renderAll();
+    });
+
+    // Sự kiện lưu bbox
+    document.getElementById("save-bbox").addEventListener("click", function() {
+        const saveButton = this;
+        saveButton.disabled = true;
+        saveButton.textContent = "Đang xử lý...";
+        if (!currentRequestImgId) {
+            alert("Không có ID ảnh để lưu.");
+            saveButton.disabled = false;
+            saveButton.textContent = "Xác nhận";
+            return;
+        }
+
+        if (!canvas || !canvas.backgroundImage) {
+            alert("Canvas chưa sẵn sàng.");
+            saveButton.disabled = false;
+            saveButton.textContent = "Xác nhận";
+            return;
+        }
+
+        const speciesId = document.getElementById("modalInsectSelect").value;
+        const description = document.getElementById("description").value.trim();
+        const classId = parseInt(speciesId.replace("IP", "")) - 1;
+
+        if (isNaN(classId)) {
+            alert("Species ID không hợp lệ.");
+            saveButton.disabled = false;
+            saveButton.textContent = "Xác nhận";
+            return;
+        }
+
+        canvas.getObjects().forEach(obj => {
+            obj.classLabel = classId;
+        });
+
+        const newBboxData = canvas.getObjects().map(obj => {
+            let bbox = obj.getBoundingRect();
+            let xCenter = ((bbox.left + bbox.width / 2) / scaleFactor) / originalWidth;
+            let yCenter = ((bbox.top + bbox.height / 2) / scaleFactor) / originalHeight;
+            let width = (bbox.width / scaleFactor) / originalWidth;
+            let height = (bbox.height / scaleFactor) / originalHeight;
+            return `${obj.classLabel} ${xCenter} ${yCenter} ${width} ${height}`;
+        });
+
+        fetch(`/save_bbox/`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
+            body: JSON.stringify({
+                bbox_lines: newBboxData,
+                species_id: speciesId,
+                description: description,
+                local_path: currentRequestImgId,
+                id_crawler: currentIdCrawler
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === "success") {
+                alert("Lưu bounding box và đóng góp thành công!");
+                bootstrap.Modal.getInstance(document.getElementById("bboxModal")).hide();
+            } else {
+                alert("Lưu bounding box thất bại: " + (data.error || "Không xác định"));
+            }
+        })
+        .catch(error => {
+            console.error("Lỗi AJAX save_bbox:", error);
+            alert("Lỗi khi lưu bbox: " + error.message);
+        })
+        .finally(() => {
+            // Khôi phục trạng thái nút
+            saveButton.disabled = false;
+            saveButton.textContent = "Xác nhận";
+        });
+    });
+
+    // Xử lý khi modal đóng
+    document.getElementById("bboxModal").addEventListener("hidden.bs.modal", function() {
+        if (canvas) {
+            canvas.dispose();
+            canvas = null;
+        }
+        document.getElementById("description").value = "";
+        document.getElementById("modalInsectSelect").value = "";
+        document.getElementById("bbox-warning").style.display = "none";
+
+        fetch("/clear_temp_files/", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": "{{ csrf_token }}"
+        },
+        body: JSON.stringify({ local_path: currentRequestImgId })
+    });
+    });
+
+    // Xử lý nút xóa (giữ nguyên)
+    document.addEventListener("click", function(event) {
+        if (event.target.classList.contains("delete-btn")) {
+            event.target.closest(".row").remove();
+        }
+    });
+});
+</script>
+{% endblock %}

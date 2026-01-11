@@ -1,0 +1,210 @@
+{% extends "template_v2.html" %}
+{% block content %}
+<div style="background-color: #F5F5F5;">
+    <div class="container py-3">
+        <br>
+        <div class="d-flex justify-content-center">
+            <p class="fw-bold fs-2" align="center">Chấp Nhận Hình Ảnh Mới</p>
+        </div>
+        <div>
+            <hr>
+        </div>
+        
+        <!-- Hiển thị thông báo -->
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+        
+        <!-- DỮ LIỆU ẨN CHO JAVASCRIPT -->
+        <input type="hidden" id="bbox-json" value="{{ bbox_json }}">
+        <input type="hidden" id="img-url" value="{{ bbox_img_url }}">
+        
+        <div class="row g-4">
+            <!-- Thông tin phân loại - ĐẦY ĐỦ KHÔNG THIẾU -->
+            <div class="col-md-3">
+                <div class="card shadow-sm">
+                    <div class="card-header text-center fw-bold bg-primary text-white">
+                        Thông tin côn trùng
+                    </div>
+                    <div class="card-body">
+                        <p><strong>Tên khoa học:</strong> {{ species.ename }}</p>
+                        <p><strong>Tên thường gọi:</strong> {{ species.name }}</p>
+                        <p><strong>Tên tiếng Việt:</strong> {{ species.vi_name|default:"Chưa có" }}</p>
+                        <p><strong>Tên loài:</strong> {{ species.species_name|default:species.ename }}</p>
+                        <p><strong>Phân loại khoa học:</strong></p>
+                        <ul class="list-unstyled">
+                            <li><strong>Giới (Kingdom):</strong> {{ species.genus.family.order.class_field.phylum.kingdom.ename }}</li>
+                            <li><strong>Ngành (Phylum):</strong> {{ species.genus.family.order.class_field.phylum.ename }}</li>
+                            <li><strong>Lớp (Class):</strong> {{ species.genus.family.order.class_field.ename }}</li>
+                            <li><strong>Bộ (Order):</strong> {{ species.genus.family.order.ename }}</li>
+                            <li><strong>Họ (Family):</strong> {{ species.genus.family.ename }}</li>
+                            <li><strong>Chi (Genus):</strong> {{ species.genus.ename }}</li>
+                            <li><strong>Loài (Species):</strong> {{ species.ename }}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Canvas -->
+            <div class="col-md-9">
+                <div class="bg-white p-3 shadow rounded">
+                    <div class="d-flex justify-content-center">
+                        <canvas id="bboxCanvas" class="border border-secondary shadow rounded"></canvas>
+                    </div>
+                    <div id="imageError" class="alert alert-danger mt-3" style="display:none;">
+                        Không thể tải ảnh. Vui lòng kiểm tra lại đường dẫn.
+                    </div>
+                </div>
+                <form action="{% url 'accept_new_image' request_item.request_img_id %}" method="post" class="p-4 bg-white shadow rounded">
+                    {% csrf_token %}
+                    <div class="mb-4">
+                        <label for="description" class="form-label fw-bold text-primary">Mô tả chi tiết</label>
+                        <textarea class="form-control border border-primary shadow-sm" id="description" name="description" rows="4" placeholder="..." readonly>{{ request_item.desc }}</textarea>
+                    </div>
+
+                    <div class="text-center">
+                        <button type="submit" id="acceptBtn" name="action" value="accept" class="btn btn-success px-4 me-3 shadow">
+                            <i class="bi bi-check-circle"></i> Chấp nhận
+                        </button>
+                        <button type="submit" id="rejectBtn" name="action" class="btn btn-danger px-4 shadow" value="reject">
+                            <i class="bi bi-x-circle"></i> Từ chối
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.3.0/fabric.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // LẤY DỮ LIỆU TỪ THẺ ẨN
+    const bboxJsonElement = document.getElementById('bbox-json');
+    const imgUrlElement = document.getElementById('img-url');
+    
+    // Parse JSON từ value
+    let bboxData = [];
+    try {
+        const bboxJson = bboxJsonElement.value;
+        if (bboxJson && bboxJson !== 'null') {
+            bboxData = JSON.parse(bboxJson);
+        }
+    } catch (e) {
+        console.error('Error parsing bbox JSON:', e);
+        bboxData = [];
+    }
+    
+    // Lấy URL ảnh
+    const imgSrc = imgUrlElement.value || '';
+    
+    console.log('BBox data:', bboxData);
+    console.log('Image source:', imgSrc);
+    
+    // Khởi tạo canvas
+    const canvasElement = document.getElementById('bboxCanvas');
+    const imageErrorDiv = document.getElementById('imageError');
+    const canvas = new fabric.StaticCanvas(canvasElement);
+    
+    let originalWidth, originalHeight, scaleFactor;
+
+    // Tải ảnh
+    fabric.Image.fromURL(imgSrc, function(img) {
+        imageErrorDiv.style.display = 'none';
+        
+        // Tính toán kích thước hiển thị
+        const maxWidth = 800;
+        const maxHeight = 600;
+        
+        originalWidth = img.width;
+        originalHeight = img.height;
+        
+        // Tính tỷ lệ scale để vừa với kích thước tối đa
+        scaleFactor = Math.min(
+            maxWidth / originalWidth,
+            maxHeight / originalHeight,
+            1 // Không phóng to quá kích thước gốc
+        );
+        
+        // Thiết lập kích thước canvas
+        canvas.setWidth(originalWidth * scaleFactor);
+        canvas.setHeight(originalHeight * scaleFactor);
+        
+        // Thiết lập ảnh nền
+        img.scale(scaleFactor);
+        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+        
+        // Vẽ bounding boxes - GIỐNG HỆT TRANG CHUYÊN GIA
+        bboxData.forEach((bbox, index) => {
+            if (!bbox) return;
+            
+            try {
+                // Chuyển đổi từ YOLO format (0-1) sang pixel
+                const xCenter = bbox.x || 0.5;
+                const yCenter = bbox.y || 0.5;
+                const width = bbox.width || 1.0;
+                const height = bbox.height || 1.0;
+                
+                // Tính tọa độ pixel
+                const x = (xCenter - width / 2) * originalWidth;
+                const y = (yCenter - height / 2) * originalHeight;
+                const w = width * originalWidth;
+                const h = height * originalHeight;
+                
+                // Màu bounding box - ĐỎ như trang chuyên gia
+                const bboxColor = '#FF0000';
+                
+                // Tạo rectangle cho bounding box
+                const rect = new fabric.Rect({
+                    left: x * scaleFactor,
+                    top: y * scaleFactor,
+                    width: w * scaleFactor,
+                    height: h * scaleFactor,
+                    fill: 'transparent',
+                    stroke: bboxColor,
+                    strokeWidth: 2,
+                    selectable: false,
+                    evented: false
+                });
+                
+                // HIỂN THỊ TÊN LOÀI - giống trang chuyên gia
+                let speciesName = bbox.species_name || 'Unknown';
+                
+                const labelText = `${speciesName}`;
+                
+                const label = new fabric.Text(labelText, {
+                    left: x * scaleFactor + 5,
+                    top: y * scaleFactor + 5,
+                    fontSize: 14,
+                    fill: '#FFFFFF',
+                    backgroundColor: 'rgba(255, 0, 0, 0.7)',
+                    padding: 4,
+                    fontWeight: 'bold'
+                });
+                
+                canvas.add(rect);
+                canvas.add(label);
+                
+            } catch (e) {
+                console.error('Error drawing bbox:', bbox, e);
+            }
+        });
+        
+        canvas.renderAll();
+        
+    }, function(err) {
+        console.error('Error loading image:', err);
+        imageErrorDiv.style.display = 'block';
+        canvasElement.style.display = 'none';
+    }, {
+        crossOrigin: 'anonymous'
+    });
+});
+</script>
+{% endblock %}

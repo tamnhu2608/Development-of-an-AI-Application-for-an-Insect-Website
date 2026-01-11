@@ -1,0 +1,62 @@
+{% extends "template_v2.html" %}
+
+{% block title %}
+Cây trồng bị {{ insect.name }} gây hại
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <div class="text-center mb-4">
+        <h2 class="fw-bold text-danger">
+            🌱 Cây trồng bị {{ insect.name }} gây hại
+        </h2>
+        <p class="text-muted">
+            ({{ insect.ename }})
+        </p>
+    </div>
+
+    <hr>
+
+    {% if damages %}
+        <div class="row">
+            {% for d in damages %}
+            <div class="col-md-6 col-lg-4 mb-3">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title text-success">
+                            {{ d.crop.name }}
+                        </h5>
+                        <p class="text-muted fst-italic">
+                            {{ d.crop.scientific_name }}
+                        </p>
+
+                        <p class="mb-1">
+                            <strong>Mức độ gây hại:</strong>
+                            {{ d.damage_level }}
+                        </p>
+
+                        {% if d.description %}
+                        <p class="small text-secondary mt-2">
+                            {{ d.description }}
+                        </p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-warning text-center">
+            Hiện chưa có dữ liệu cây trồng bị loài này gây hại.
+        </div>
+    {% endif %}
+
+    <div class="text-center mt-4">
+        <a href="javascript:history.back()" class="btn btn-secondary">
+            ⬅ Quay lại
+        </a>
+    </div>
+
+</div>
+{% endblock %}

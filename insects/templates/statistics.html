@@ -1,0 +1,208 @@
+{% extends "template_v2.html" %}
+{% block content %}
+
+<!-- Chart.js & jQuery -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.2.1/dist/chart.umd.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.4.min.js"
+        integrity="sha256-oP6HI9z1XaZNBrJURtCoUT5SUnxFr8s3BzRl+cbzUq8=" crossorigin="anonymous"></script>
+
+
+<div class="container py-4">
+    <div class="d-flex justify-content-center align-items-center py-3">
+            <p class="fw-bold fs-2">Thống kê</p>
+      </div>
+
+    <div class="row">
+        <!-- Thống kê côn trùng -->
+        <div class="col-12 mb-5">
+            <div class="card shadow-sm p-3">
+                <h3 class="card-title text-success"><i class="fas fa-bug"></i> Thống kê côn trùng</h3>
+                <hr>
+
+                <h5 class="mt-3">Thống kê bộ theo lớp</h5>
+                <p>Tổng số lớp: <strong>{{total_class}}</strong></p>
+                <canvas id="orderClassChart" class="mb-3"></canvas>
+                <p>Tổng số bộ: <strong>{{total_order}}</strong></p>
+                <div class="row">
+                    {% for class in order_class %}
+                    <div class="col-md-3 mb-1">
+                        <li>{{ class.name }}: <strong>{{ class.order_count }}</strong></li>
+                    </div>
+                    {% endfor %}
+                </div>
+                  <hr>
+
+                <h5 class="mt-4">Thống kê họ theo bộ</h5>
+                <p>Tổng số bộ: <strong>{{total_order}}</strong></p>
+                <canvas id="familyOrderChart" class="mb-3"></canvas>
+                <p>Tổng số họ: <strong>{{total_family}}</strong></p>
+                <div class="row">
+                    {% for order in family_order %}
+                    <div class="col-md-3 mb-1">
+                        <li>{{ order.name }}: <strong>{{ order.family_count }}</strong></li>
+                    </div>
+                    {% endfor %}
+                </div>
+                  <hr>
+                <h5 class="mt-4">Thống kê chi theo họ</h5>
+                <p>Tổng số họ: <strong>{{total_family}}</strong></p>
+                <canvas id="genusFamilyChart" class="mb-3"></canvas>
+                <p>Tổng số chi: <strong>{{total_genus}}</strong></p>
+                <div class="row">
+                    {% for family in genus_family %}
+                    <div class="col-md-3 mb-1">
+                        <li>{{ family.name }}: <strong>{{ family.genus_count }}</strong></li>
+                    </div>
+                    {% endfor %}
+                </div>
+                  <hr>
+
+                <h5 class="mt-4">Thống kê loài theo chi</h5>
+                <p>Tổng số chi: <strong>{{total_genus}}</strong></p>
+                <canvas id="speciesGenusChart" class="mb-3"></canvas>
+                <p>Tổng số loài: <strong>{{total_species}}</strong></p>
+                <div class="row">
+                    {% for genus in species_genus %}
+                    <div class="col-md-3 mb-1">
+                        <li>{{ genus.name }}: <strong>{{ genus.species_count }}</strong></li>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+          <hr>
+
+        <!-- Thống kê ảnh -->
+        <div class="col-12 mb-5">
+            <div class="card shadow-sm p-3">
+                <h3 class="card-title text-warning"><i class="fas fa-image"></i> Thống kê ảnh</h3>
+                <hr>
+                <p>Tổng số ảnh các loài: <strong>{{total_image}}</strong></p>
+                <canvas id="speciesimgChart" class="mb-3"></canvas>
+                <div class="row">
+                    {% for species in img_species %}
+                    <div class="col-md-3 mb-1">
+                        <li>{{ species.name }}: <strong>{{ species.img_count }}</strong></li>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Thống kê người dùng -->
+        <div class="col-12">
+            <div class="card shadow-sm p-3">
+                <h3 class="card-title text-danger"><i class="fas fa-users"></i> Thống kê người dùng</h3>
+                <hr>
+                <div class="row">
+                    <div class="col-md-6">
+                        <canvas id="userGroupChart" style="max-width: 100%; max-height: 350px;"></canvas>
+                    </div>
+                    <div class="col-md-6">
+                        <p>Tổng số người dùng: <strong>{{total_user}}</strong></p>
+                        <ul>
+                            {% for group in user_groups %}
+                            <li>{{ group.name }}: <strong>{{ group.user_count }}</strong> người</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Javascript xử lý chart -->
+<script>
+$(document).ready(function () {
+    loadAllCharts();
+});
+
+function loadChart(chart, endpoint) {
+    $.ajax({
+        url: endpoint,
+        type: "GET",
+        dataType: "json",
+        success: (jsonResponse) => {
+            chart.data.labels = jsonResponse.data.labels;
+            chart.data.datasets = jsonResponse.data.datasets;
+            chart.options.plugins.title.text = jsonResponse.title;
+            chart.update();
+        },
+        error: () => console.log("Failed to fetch chart data from " + endpoint)
+    });
+}
+
+function loadAllCharts() {
+    loadChart(speciesimgChart, `/chart/image_by_species/`);
+    loadChart(userGroupChart, `/chart/user_by_group/`);
+    loadChart(orderClassChart, `/chart/order_by_class/`);
+    loadChart(familyOrderChart, `/chart/family_by_order/`);
+    loadChart(genusFamilyChart, `/chart/genus_by_family/`);
+    loadChart(speciesGenusChart, `/chart/species_by_genus/`);
+}
+
+// Khởi tạo các chart
+let speciesimgChart = new Chart(document.getElementById("speciesimgChart"), {
+    type: "bar",
+    options: {
+        responsive: true,
+        plugins: {
+            title: { display: false, text: "" }
+        }
+    }
+});
+
+let userGroupChart = new Chart(document.getElementById("userGroupChart"), {
+    type: "pie",
+    options: {
+        responsive: true,
+        plugins: {
+            title: { display: true, text: "Thống kê số lượng người dùng theo phân quyền" }
+        }
+    }
+});
+
+let orderClassChart = new Chart(document.getElementById("orderClassChart"), {
+    type: "bar",
+    options: {
+        responsive: true,
+        plugins: {
+            title: { display: true, text: "Thống kê số lượng bộ theo lớp" }
+        }
+    }
+});
+
+let familyOrderChart = new Chart(document.getElementById("familyOrderChart"), {
+    type: "bar",
+    options: {
+        responsive: true,
+        plugins: {
+            title: { display: true, text: "Thống kê số lượng họ theo bộ" }
+        }
+    }
+});
+
+let genusFamilyChart = new Chart(document.getElementById("genusFamilyChart"), {
+    type: "bar",
+    options: {
+        responsive: true,
+        plugins: {
+            title: { display: true, text: "Thống kê số lượng chi theo họ" }
+        }
+    }
+});
+
+let speciesGenusChart = new Chart(document.getElementById("speciesGenusChart"), {
+    type: "bar",
+    options: {
+        responsive: true,
+        plugins: {
+            title: { display: true, text: "Thống kê số lượng loài theo chi" }
+        }
+    }
+});
+</script>
+
+{% endblock %}

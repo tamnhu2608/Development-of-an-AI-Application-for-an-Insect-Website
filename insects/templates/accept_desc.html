@@ -1,0 +1,108 @@
+{% extends "template_v2.html" %}
+{% block content %}
+<div class="container py-3">
+    <div class="d-flex justify-content-center">
+        <p class="fw-bold fs-2">Chấp nhận đóng góp mô tả ảnh côn trùng</p>
+    </div>
+    <div>
+        <hr>
+    </div>
+    <div class="row">
+        <!-- Thông tin phân loại khoa học -->
+        <div class="col-md-3">
+            <div class="card shadow-sm">
+                <div class="card-header text-center fw-bold bg-primary text-white">
+                    Thông tin côn trùng
+                </div>
+                <div class="card-body">
+                    <p><strong>Tên khoa học:</strong> {{ specie.ename }}</p>
+                    <p><strong>Tên thường gọi:</strong> {{ specie.name }}</p>
+                    <p><strong>Phân loại khoa học:</strong></p>
+                    <ul class="list-unstyled">
+                        <li><strong>Giới (Kingdom):</strong> {{ specie.genus.family.order.class_field.phylum.kingdom.ename }}</li>
+                        <li><strong>Ngành (Phylum):</strong> {{ specie.genus.family.order.class_field.phylum.ename }}</li>
+                        <li><strong>Lớp (Class):</strong> {{ specie.genus.family.order.class_field.ename }}</li>
+                        <li><strong>Bộ (Order):</strong> {{ specie.genus.family.order.ename }}</li>
+                        <li><strong>Họ (Family):</strong> {{ specie.genus.family.ename }}</li>
+                        <li><strong>Chi (Genus):</strong> {{ specie.genus.ename }}</li>
+                        <li><strong>Loài (Species):</strong> {{ specie.ename }}</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hình ảnh & mô tả -->
+        <div class="col-md-9">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="text-center mb-3">
+                        <img class="img-thumbnail" src="{{ MEDIA_URL }}{{ img_info.url }}" style="width: 600px;" alt="Ảnh côn trùng">
+                    </div>
+
+                    <!-- Thông tin mô tả -->
+                    <div class="mb-3">
+                        <h4 class="fw-bold">Chi tiết</h4>
+                        <p class="text-muted">
+                            Thời gian gửi: <strong>{{ request_item.created_at|date:"Y-m-d H:i:s" }}</strong> <br>
+                            Người gửi: <strong>{{ request_item.user.username }}</strong> <br>
+                            Mô tả:
+                        </p>
+                        <div class="border p-3 bg-light rounded">
+                            <p class="fs-5">{{ request_item.desc|linebreaksbr }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Nút xác nhận hoặc từ chối -->
+                    <form action="{% url 'accept_desc_request' request_item.request_desc_id %}" method="post">
+                        {% csrf_token %}
+                        {% if messages or request_item.status == 'Accepted' or request_item.status == 'Rejected' %}
+                            <div class="text-center">
+                                <a class="btn btn-primary" href="{% url 'admin_desc_verify' %}">Quay về</a>
+                            </div>
+                        {% else %}
+                            <div class="text-center">
+                                <button type="submit" name="action" value="reject" class="btn btn-danger m-2">Từ chối</button>
+                                <button type="submit" name="action" value="accept" class="btn btn-success m-2">Chấp nhận</button>
+                            </div>
+                        {% endif %}
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hiển thị modal khi có thông báo -->
+        {% if messages %}
+        <div class="modal fade" id="successModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header text-white">
+                        <h5 class="modal-title">Thông báo</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="redirectToVerifyPage()"></button>
+                    </div>
+                    <div class="modal-body">
+                        {% for message in messages %}
+                            <p>{{ message }}</p>
+                        {% endfor %}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" onclick="redirectToVerifyPage()">Đóng</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            function redirectToVerifyPage() {
+                window.location.href = "{% url 'admin_desc_verify' %}";
+            }
+
+            // Chờ trang load xong rồi mới hiển thị modal để đảm bảo hiệu ứng
+            document.addEventListener("DOMContentLoaded", function() {
+                var successModal = new bootstrap.Modal(document.getElementById('successModal'));
+                successModal.show();
+            });
+        </script>
+    {% endif %}
+</div>
+{% endblock %}

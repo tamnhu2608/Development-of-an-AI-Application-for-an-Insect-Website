@@ -1,0 +1,204 @@
+{% extends "template_v2.html" %}
+{% block content %}
+{% load custom_filters %}
+<!--{% if messages %}-->
+<!--    <div class="container py-3">-->
+<!--        {% for message in messages %}-->
+<!--            <div class="alert alert-{{ message.tags }}" role="alert">-->
+<!--                {{ message }}-->
+<!--            </div>-->
+<!--        {% endfor %}-->
+<!--    </div>-->
+<!--{% endif %}-->
+<div class="container py-3">
+    <nav class="mb-3">
+        <div class="nav nav-tabs" id="nav-tab" role="tablist">
+            <button class="nav-link active" id="nav-contribImage-tab" data-bs-toggle="tab" data-bs-target="#nav-contribImage" type="button" role="tab" aria-controls="nav-contribImage" aria-selected="true">Đóng góp</button>
+            <button class="nav-link" id="nav-history-tab" data-bs-toggle="tab" data-bs-target="#nav-history" type="button" role="tab" aria-controls="nav-history" aria-selected="false">Lịch sử</button>
+        </div>
+    </nav>
+    <div class="tab-content mb-3" id="nav-tabContent">
+        <!--        ============================================Đề xuất==========================================-->
+        <div class="tab-pane fade show active" id="nav-contribImage" role="tabpanel" aria-labelledby="nav-contribImage-tab" tabindex="0">
+            <div class="container py-3 d-flex justify-content-center align-items-center">
+                <form action="{% url 'contrib_image' %}" method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <legend class="text-center text-black fw-bold mt-3">
+                           <p class="fw-bold fs-2">Đóng góp ảnh côn trùng</p>
+                    </legend>
+                    <div class="mb-3">
+                        <label for="insectImage" class="form-label">Chọn hình ảnh</label>
+                        <input class="form-control" type="file" id="insectImage" name="insectImage" accept="image/*">
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary pt-3 pb-3">Nhận dạng</button>
+                    </div>
+                </form>
+            </div>
+            {% if messages %}
+                 <div class="container mt-4">
+                    {% for message in messages %}
+                        <div class="alert alert-dismissible fade show" role="alert">
+                            <div class="d-flex align-items-center">
+                                {% if message.tags == 'error' %}
+                                    <div class="alert alert-warning w-100">
+                                        {{ message }}
+                                    </div>
+                                {% elif message.tags == 'success' %}
+                                    <div class="alert alert-success w-100">
+                                        {{ message }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <!-- Kết quả tìm kiếm -->
+            {% if output_image_path and species_detect %}
+                <!-- Hiển thị lỗi -->
+                <div class="container mt-4">
+                    <div class="alert alert-warning">
+                        {{ error }}
+                    </div>
+                    {% if output_image_path %}
+                        <p class="fw-bold fs-2" align="center">Danh sách côn trùng có thể đóng góp</p>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th scope="col">STT</th>
+                                    <th scope="col">Tên Khoa Học</th>
+                                    <th scope="col">Tên Tiếng Việt</th>
+                                    <th scope="col" colspan="2"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sp in species_detect %}
+                                    <tr>
+                                        <th scope="row">{{ forloop.counter }}</th>
+                                        <td>{{sp.ename}}</td>
+                                        <td>{{sp.vi_name}}</td>
+                                        <td>
+                                            <a href="{% url 'detail' slug=sp.slug %}" class="btn btn-outline-primary fs-6">
+                                                    <strong>Chi tiết</strong>
+                                            </a>
+                                        </td>
+                                        <td>
+                                            <form action="{% url 'request_image' %}" method="post">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="species_id" value="{{ sp.insects_id }}">
+                                                <input type="hidden" name="image_path" value="{{ upload_image }}">
+                                                <button type="submit" class="btn btn-outline-success fs-6">Đóng góp</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                </div>
+            {% elif output_image_path %}
+                <div class="container mt-4">
+                    <div class="alert alert-danger">
+                        <strong>Không nhận diện được loài!</strong> Có thể đây không phải côn trùng hoặc là loài chưa được huấn luyện.
+                    </div>
+                </div>
+            <!-- Hiển thị lỗi khác -->
+            {% elif error %}
+                <div class="container mt-4">
+                    <div class="alert alert-warning">
+                        {{ error }}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+        <!--        ============================================Lịch sử==========================================-->
+        <div class="tab-pane fade" id="nav-history" role="tabpanel" aria-labelledby="nav-history-tab" tabindex="1">
+            <div class="d-flex justify-content-center">
+                <p class="fw-bold fs-2">Lịch sử đóng góp hình ảnh</p>
+            </div>
+            <div>
+                <hr>
+            </div>
+            <table class="table table-bordered table-striped">
+                <thead class="table-dark">
+                    <tr align="center">
+                        <th scope="col">STT</th>
+                        <th scope="col">Hình ảnh</th>
+                        <th scope="col">Tên loài</th>
+                        <th scope="col">Thời gian đóng góp</th>
+                        <th scope="col">Trạng thái</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if contributed_images %}
+                        {% for image in contributed_images %}
+                            <tr align="center">
+                                <th scope="row">{{ forloop.counter }}</th>
+                                <td>
+                                    <a href="{{ image.full_url }}" target="_blank">
+                                        <img src="{{ image.full_url }}" class="img-thumbnail" alt="Ảnh đã đóng góp" width="100">
+                                    </a>
+                                </td>
+                                <td align="left">{{ image.insects_id.vi_name }} ({{ image.insects_id.ename }})</td>
+                                <td>{{ image.request_time|date:"d/m/Y H:i:s" }}</td>
+                                <td>
+                                    {% if image.status == 'pending' %}
+                                        <span class="badge bg-warning text-dark">
+                                            {{ image.status|format_status }}
+                                        </span>
+                                    {% elif image.status == 'verified' %}
+                                        <span class="badge bg-info text-dark">
+                                            {{ image.status|format_status }}
+                                        </span>
+                                    {% elif image.status == 'accepted' %}
+                                        <span class="badge bg-success">
+                                            {{ image.status|format_status }}
+                                        </span>
+                                    {% elif image.status == 'rejected' %}
+                                        <span class="badge bg-danger">
+                                            {{ image.status|format_status }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="6" class="text-center">
+                                <p class="text-muted">Danh sách trống...</p>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Lấy tab đang lưu trong localStorage
+        let activeTab = localStorage.getItem("activeTab");
+
+        // Nếu có tab được lưu, kích hoạt nó
+        if (activeTab) {
+            // let tabElement = document.querySelector(`#${activeTab}`);
+
+            let cleanTabId = activeTab.replace(/['"#]/g, "");
+            let tabElement = document.getElementById(cleanTabId);
+
+            if (tabElement) {
+                new bootstrap.Tab(tabElement).show();
+            }
+        }
+
+        // Lưu tab khi người dùng bấm vào
+        document.querySelectorAll('.nav-link').forEach(tab => {
+            tab.addEventListener("click", function () {
+                localStorage.setItem("activeTab", this.id);
+            });
+        });
+    });
+</script>
+{% endblock %}

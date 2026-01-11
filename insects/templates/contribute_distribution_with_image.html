@@ -1,0 +1,344 @@
+{% extends 'template_v2.html' %}
+{% load static %}
+
+{% block title %}Đóng góp vị trí côn trùng{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="fas fa-map-marker-alt"></i> Đóng góp vị trí côn trùng</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        Bạn có thể đóng góp vị trí côn trùng bằng cách:
+                        <ul class="mb-0 mt-2">
+                            <li>Chụp ảnh trực tiếp (có GPS tự động)</li>
+                            <li>Tải ảnh từ thiết bị và nhập tọa độ thủ công</li>
+                            <li>Nhập thông tin quan sát và tọa độ</li>
+                        </ul>
+                    </div>
+                    
+                    <form method="post" enctype="multipart/form-data" id="distributionForm">
+                        {% csrf_token %}
+                        
+                        <!-- Chụp ảnh hoặc tải ảnh -->
+                        <div class="mb-4">
+                            <h5><i class="fas fa-camera"></i> 1. Chụp hoặc tải ảnh</h5>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-body text-center">
+                                            <button type="button" class="btn btn-outline-primary mb-3" id="captureBtn">
+                                                <i class="fas fa-camera"></i> Chụp ảnh trực tiếp
+                                            </button>
+                                            <div class="camera-preview mb-3" id="cameraPreview" style="display: none;">
+                                                <video id="cameraView" width="100%" autoplay></video>
+                                                <button type="button" class="btn btn-success mt-2" id="takePhotoBtn">
+                                                    <i class="fas fa-camera"></i> Chụp ảnh
+                                                </button>
+                                            </div>
+                                            <canvas id="photoCanvas" style="display: none;"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card h-100">
+                                        <div class="card-body text-center">
+                                            <label class="btn btn-outline-secondary mb-3" for="imageUpload">
+                                                <i class="fas fa-upload"></i> Tải ảnh từ thiết bị
+                                            </label>
+                                            <input type="file" 
+                                                   id="imageUpload" 
+                                                   name="observation_image" 
+                                                   accept="image/*" 
+                                                   capture="environment"
+                                                   class="d-none">
+                                            <div id="imagePreview" class="mt-3"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Lấy vị trí -->
+                        <div class="mb-4">
+                            <h5><i class="fas fa-location-dot"></i> 2. Vị trí</h5>
+                            <div class="alert alert-warning" id="locationAlert" style="display: none;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Không thể lấy vị trí tự động. Vui lòng nhập thủ công hoặc cho phép truy cập vị trí.
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Vĩ độ (Latitude)</label>
+                                        <input type="number" 
+                                               step="any" 
+                                               class="form-control" 
+                                               id="latitude" 
+                                               name="latitude"
+                                               placeholder="Ví dụ: 16.1666667"
+                                               required>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Kinh độ (Longitude)</label>
+                                        <input type="number" 
+                                               step="any" 
+                                               class="form-control" 
+                                               id="longitude" 
+                                               name="longitude"
+                                               placeholder="Ví dụ: 107.8333333"
+                                               required>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <button type="button" class="btn btn-info btn-sm" id="getLocationBtn">
+                                    <i class="fas fa-location-crosshairs"></i> Lấy vị trí hiện tại
+                                </button>
+                                <small class="text-muted ms-2">(Yêu cầu cho phép truy cập vị trí)</small>
+                            </div>
+                            <div id="mapPreview" style="height: 200px; border: 1px solid #ddd; border-radius: 5px;"></div>
+                        </div>
+                        
+                        <!-- Thông tin cơ bản -->
+                        <div class="mb-4">
+                            <h5><i class="fas fa-info-circle"></i> 3. Thông tin quan sát</h5>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Loài côn trùng *</label>
+                                        <select class="form-select" name="species" required>
+                                            <option value="">Chọn loài...</option>
+                                            {% for species in species_list %}
+                                            <option value="{{ species.insects_id }}">
+                                                {{ species.name }} ({{ species.ename }})
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Khu vực</label>
+                                        <select class="form-select" name="region">
+                                            <option value="">Chọn khu vực...</option>
+                                            {% for region in regions %}
+                                            <option value="{{ region.id }}">{{ region.name }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Ngày quan sát</label>
+                                        <input type="date" class="form-control" name="observation_date">
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Thời gian</label>
+                                        <input type="time" class="form-control" name="observation_time">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Ghi chú (tùy chọn)</label>
+                                <textarea class="form-control" 
+                                          name="note" 
+                                          rows="3" 
+                                          placeholder="Mô tả chi tiết về quan sát..."></textarea>
+                            </div>
+                        </div>
+                        
+                        <!-- Nút gửi -->
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-paper-plane"></i> Gửi đóng góp
+                            </button>
+                            <a href="{% url 'distribution_map' %}" class="btn btn-outline-secondary btn-lg ms-2">
+                                <i class="fas fa-times"></i> Hủy
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+    .camera-preview video {
+        border: 2px solid #007bff;
+        border-radius: 5px;
+    }
+    #mapPreview { margin-top: 10px; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map;
+let marker;
+let stream;
+
+// Khởi tạo bản đồ xem trước
+function initMapPreview() {
+    map = L.map('mapPreview').setView([16.1666667, 107.8333333], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+    
+    // Thêm marker mặc định
+    marker = L.marker([16.1666667, 107.8333333])
+        .addTo(map)
+        .bindPopup('Vị trí đã chọn')
+        .openPopup();
+    
+    // Xử lý click trên bản đồ để cập nhật vị trí
+    map.on('click', function(e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+        
+        document.getElementById('latitude').value = lat.toFixed(6);
+        document.getElementById('longitude').value = lng.toFixed(6);
+        
+        // Cập nhật marker
+        marker.setLatLng([lat, lng]);
+        map.setView([lat, lng], 12);
+    });
+}
+
+// Lấy vị trí hiện tại
+document.getElementById('getLocationBtn').addEventListener('click', function() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                
+                document.getElementById('latitude').value = lat.toFixed(6);
+                document.getElementById('longitude').value = lng.toFixed(6);
+                
+                // Cập nhật bản đồ
+                marker.setLatLng([lat, lng]);
+                map.setView([lat, lng], 15);
+                
+                // Ẩn cảnh báo nếu có
+                document.getElementById('locationAlert').style.display = 'none';
+            },
+            function(error) {
+                document.getElementById('locationAlert').style.display = 'block';
+                console.error('Error getting location:', error);
+            },
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+    } else {
+        document.getElementById('locationAlert').style.display = 'block';
+        alert('Trình duyệt không hỗ trợ Geolocation!');
+    }
+});
+
+// Xử lý chụp ảnh
+document.getElementById('captureBtn').addEventListener('click', async function() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } 
+        });
+        
+        const video = document.getElementById('cameraView');
+        video.srcObject = stream;
+        document.getElementById('cameraPreview').style.display = 'block';
+        document.getElementById('captureBtn').style.display = 'none';
+        
+    } catch (error) {
+        alert('Không thể truy cập camera: ' + error.message);
+    }
+});
+
+// Chụp ảnh
+document.getElementById('takePhotoBtn').addEventListener('click', function() {
+    const video = document.getElementById('cameraView');
+    const canvas = document.getElementById('photoCanvas');
+    const context = canvas.getContext('2d');
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Chuyển canvas thành blob và tạo file input
+    canvas.toBlob(function(blob) {
+        const file = new File([blob], 'captured_photo.jpg', { type: 'image/jpeg' });
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        
+        // Tạo input file ẩn và gán file
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'file';
+        hiddenInput.name = 'observation_image';
+        hiddenInput.files = dataTransfer.files;
+        hiddenInput.style.display = 'none';
+        
+        // Thêm vào form
+        document.getElementById('distributionForm').appendChild(hiddenInput);
+        
+        // Hiển thị preview
+        const preview = document.getElementById('imagePreview');
+        preview.innerHTML = `
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i> Đã chụp ảnh thành công!
+                <img src="${URL.createObjectURL(blob)}" class="img-thumbnail mt-2" style="max-height: 150px;">
+            </div>
+        `;
+        
+        // Dừng camera
+        stream.getTracks().forEach(track => track.stop());
+        document.getElementById('cameraPreview').style.display = 'none';
+        document.getElementById('captureBtn').style.display = 'inline-block';
+        
+    }, 'image/jpeg');
+});
+
+// Xử lý tải ảnh
+document.getElementById('imageUpload').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const preview = document.getElementById('imagePreview');
+        preview.innerHTML = `
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i> Đã tải ảnh lên!
+                <img src="${URL.createObjectURL(file)}" class="img-thumbnail mt-2" style="max-height: 150px;">
+            </div>
+        `;
+        
+        // Cố gắng extract GPS từ ảnh nếu có
+        extractGPSFromImage(file);
+    }
+});
+
+// Extract GPS từ ảnh (nếu có)
+function extractGPSFromImage(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        // Có thể sử dụng thư viện như exif-js để đọc metadata
+        // Ở đây chỉ là ví dụ đơn giản
+        console.log('Image loaded, could extract GPS here');
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// Khởi tạo khi trang tải xong
+document.addEventListener('DOMContentLoaded', initMapPreview);
+</script>
+{% endblock %}
