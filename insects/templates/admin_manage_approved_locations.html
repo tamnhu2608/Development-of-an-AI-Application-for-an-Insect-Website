@@ -1,0 +1,386 @@
+{% extends 'template_v2.html' %}
+{% load static %}
+
+{% block title %}Quản lý vị trí đã duyệt{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'distribution_map' %}">Bản đồ phân bố</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'admin_review_distribution' %}">Xét duyệt vị trí</a></li>
+                    <li class="breadcrumb-item active">Quản lý vị trí đã duyệt</li>
+                </ol>
+            </nav>
+            
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">
+                        <i class="fas fa-map-marker-alt me-2"></i>
+                        Quản lý vị trí đã duyệt
+                    </h4>
+                </div>
+                
+                <div class="card-body">
+                    <!-- Thống kê nhanh -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body">
+                                    <h5 class="card-title">Tổng vị trí</h5>
+                                    <h2 class="mb-0">{{ total_count }}</h2>
+                                    <small>vị trí đã duyệt</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <h5 class="card-title">Hôm nay</h5>
+                                    <h2 class="mb-0">{{ today_count }}</h2>
+                                    <small>vị trí mới</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">Top loài phổ biến</h5>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        {% for stat in species_stats %}
+                                        <span class="badge bg-light text-dark">
+                                            {{ stat.species__name }}: {{ stat.count }}
+                                        </span>
+                                        {% empty %}
+                                        <small class="text-muted">Không có dữ liệu</small>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Bộ lọc và tìm kiếm -->
+                    <div class="card mb-4">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0"><i class="fas fa-filter me-2"></i>Lọc và tìm kiếm</h5>
+                        </div>
+                        <div class="card-body">
+                            <form method="get" class="row g-3">
+                                <div class="col-md-3">
+                                    <label for="search" class="form-label">Tìm kiếm:</label>
+                                    <input type="text" class="form-control" id="search" name="search" 
+                                           value="{{ search_query }}" placeholder="Tên loài, người đóng góp...">
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="species" class="form-label">Loài:</label>
+                                    <select class="form-select" id="species" name="species">
+                                        <option value="all">Tất cả loài</option>
+                                        {% for species in species_list %}
+                                        <option value="{{ species.id }}" {% if selected_species == species.id|stringformat:"i" %}selected{% endif %}>
+                                            {{ species.name }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="region" class="form-label">Khu vực:</label>
+                                    <select class="form-select" id="region" name="region">
+                                        <option value="all">Tất cả khu vực</option>
+                                        {% for region in region_list %}
+                                        <option value="{{ region.id }}" {% if selected_region == region.id|stringformat:"i" %}selected{% endif %}>
+                                            {{ region.name }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="date_from" class="form-label">Từ ngày:</label>
+                                    <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}">
+                                </div>
+                                <div class="col-md-2">
+                                    <label for="date_to" class="form-label">Đến ngày:</label>
+                                    <input type="date" class="form-control" id="date_to" name="date_to" value="{{ date_to }}">
+                                </div>
+                                <div class="col-md-1 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                                </div>
+                            </form>
+                            {% if search_query or selected_species != 'all' or selected_region != 'all' or date_from or date_to %}
+                            <div class="mt-3">
+                                <a href="{% url 'admin_manage_approved_locations' %}" class="btn btn-sm btn-outline-secondary">
+                                    <i class="fas fa-times me-1"></i>Xóa bộ lọc
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Danh sách vị trí -->
+                    <div class="card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="fas fa-list me-2"></i>Danh sách vị trí</h5>
+                            <span class="badge bg-primary">{{ page_obj.paginator.count }} vị trí</span>
+                        </div>
+                        <div class="card-body">
+                            {% if page_obj.object_list %}
+                            <div class="table-responsive">
+                                <table class="table table-hover table-striped">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th width="60">ID</th>
+                                            <th>Loài côn trùng</th>
+                                            <th>Tọa độ</th>
+                                            <th>Khu vực</th>
+                                            <th>Người đóng góp</th>
+                                            <th>Ngày đóng góp</th>
+                                            <th>Trạng thái</th>
+                                            <th width="120">Hành động</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for location in page_obj.object_list %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-secondary">#{{ location.id }}</span>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex flex-column">
+                                                    <strong class="text-primary">{{ location.species.name }}</strong>
+                                                    <small class="text-muted">{{ location.species.eng_name }}</small>
+                                                    {% if location.observation_image %}
+                                                    <small><i class="fas fa-camera text-info"></i> Có ảnh</small>
+                                                    {% endif %}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <code class="bg-light p-1 rounded">{{ location.latitude|floatformat:4 }}, {{ location.longitude|floatformat:4 }}</code>
+                                                    <a href="https://maps.google.com/?q={{ location.latitude }},{{ location.longitude }}" 
+                                                       target="_blank" class="btn btn-sm btn-outline-secondary btn-sm ms-2" title="Xem trên Google Maps">
+                                                        <i class="fas fa-external-link-alt fa-xs"></i>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                {% if location.region %}
+                                                <span class="badge bg-info">{{ location.region.name }}</span>
+                                                {% else %}
+                                                <span class="text-muted">-</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="d-flex flex-column">
+                                                    <span>{{ location.created_by.username }}</span>
+                                                    <small class="text-muted">{{ location.created_by.email|default:"" }}</small>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                {{ location.created_at|date:"d/m/Y" }}
+                                                <small class="d-block text-muted">{{ location.created_at|time }}</small>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-check-circle me-1"></i>Đã duyệt
+                                                </span>
+                                                {% if location.approved_at %}
+                                                <small class="d-block text-muted">{{ location.approved_at|date:"d/m/Y" }}</small>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <a href="{% url 'admin_review_distribution_detail' location.id %}" 
+                                                       class="btn btn-outline-info" title="Xem chi tiết">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    <button type="button" class="btn btn-outline-danger" 
+                                                            data-bs-toggle="modal" data-bs-target="#deleteModal{{ location.id }}" 
+                                                            title="Xóa vị trí">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <!-- Phân trang -->
+                            {% if page_obj.paginator.num_pages > 1 %}
+                            <nav aria-label="Page navigation" class="mt-4">
+                                <ul class="pagination justify-content-center">
+                                    {% if page_obj.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_species != 'all' %}&species={{ selected_species }}{% endif %}{% if selected_region != 'all' %}&region={{ selected_region }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
+                                            <i class="fas fa-angle-double-left"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_species != 'all' %}&species={{ selected_species }}{% endif %}{% if selected_region != 'all' %}&region={{ selected_region }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </a>
+                                    </li>
+                                    {% endif %}
+                                    
+                                    {% for num in page_obj.paginator.page_range %}
+                                        {% if num <= page_obj.number|add:2 and num >= page_obj.number|add:-2 %}
+                                            {% if page_obj.number == num %}
+                                            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                                            {% else %}
+                                            <li class="page-item">
+                                                <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_species != 'all' %}&species={{ selected_species }}{% endif %}{% if selected_region != 'all' %}&region={{ selected_region }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
+                                                    {{ num }}
+                                                </a>
+                                            </li>
+                                            {% endif %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    
+                                    {% if page_obj.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_species != 'all' %}&species={{ selected_species }}{% endif %}{% if selected_region != 'all' %}&region={{ selected_region }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </a>
+                                    </li>
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_species != 'all' %}&species={{ selected_species }}{% endif %}{% if selected_region != 'all' %}&region={{ selected_region }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
+                                            <i class="fas fa-angle-double-right"></i>
+                                        </a>
+                                    </li>
+                                    {% endif %}
+                                </ul>
+                                <div class="text-center text-muted mt-2">
+                                    Trang {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+                                </div>
+                            </nav>
+                            {% endif %}
+                            
+                            {% else %}
+                            <div class="text-center py-5">
+                                <i class="fas fa-map-marker-alt fa-4x text-muted mb-3"></i>
+                                <h5 class="text-muted">Không tìm thấy vị trí nào</h5>
+                                <p class="text-muted">Không có vị trí nào phù hợp với điều kiện tìm kiếm của bạn.</p>
+                                <a href="{% url 'admin_manage_approved_locations' %}" class="btn btn-primary">
+                                    <i class="fas fa-redo me-2"></i>Xem tất cả vị trí
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal xác nhận xóa (đặt ở cuối body) -->
+{% for location in page_obj.object_list %}
+<div class="modal fade" id="deleteModal{{ location.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Xác nhận xóa vị trí
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-circle fa-lg me-2"></i>
+                    <strong>HÀNH ĐỘNG NÀY KHÔNG THỂ HOÀN TÁC!</strong>
+                </div>
+                
+                <p>Bạn đang xóa vị trí <strong>#{{ location.id }}</strong>:</p>
+                <ul>
+                    <li><strong>Loài:</strong> {{ location.species.name }}</li>
+                    <li><strong>Tọa độ:</strong> {{ location.latitude|floatformat:4 }}, {{ location.longitude|floatformat:4 }}</li>
+                    <li><strong>Người đóng góp:</strong> {{ location.created_by.username }}</li>
+                    <li><strong>Ngày đóng góp:</strong> {{ location.created_at|date:"d/m/Y" }}</li>
+                </ul>
+                
+                <div class="alert alert-warning">
+                    <h6><i class="fas fa-bell me-2"></i>Lưu ý quan trọng:</h6>
+                    <ul class="mb-0 mt-2">
+                        <li>Vị trí sẽ bị xóa vĩnh viễn khỏi cơ sở dữ liệu</li>
+                        <li>Sẽ không còn hiển thị trên bản đồ phân bố</li>
+                        <li>Người đóng góp sẽ nhận được email thông báo</li>
+                        <li>Hành động này sẽ được ghi lại trong nhật ký hệ thống</li>
+                    </ul>
+                </div>
+                
+                <form id="deleteForm{{ location.id }}" method="post" action="{% url 'admin_delete_approved_location' location.id %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="reason{{ location.id }}" class="form-label">
+                            <i class="fas fa-comment-dots me-1"></i>Lý do xóa:
+                        </label>
+                        <textarea class="form-control" id="reason{{ location.id }}" name="reason" 
+                                  rows="3" required placeholder="Vui lòng nhập lý do xóa vị trí này..."></textarea>
+                        <small class="text-muted">Lý do này sẽ được gửi cho người đóng góp qua email</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-2"></i>Hủy bỏ
+                </button>
+                <button type="submit" form="deleteForm{{ location.id }}" class="btn btn-danger">
+                    <i class="fas fa-trash me-2"></i>Xác nhận xóa
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.table th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+}
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+.table-hover tbody tr:hover {
+    background-color: rgba(13, 110, 253, 0.05);
+    transition: background-color 0.2s;
+}
+.badge {
+    font-weight: 500;
+}
+.page-link {
+    border-radius: 4px;
+    margin: 0 2px;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Tự động đóng modal sau khi xóa thành công
+    $('button[form^="deleteForm"]').on('click', function() {
+        var formId = $(this).attr('form');
+        $('#' + formId).on('submit', function() {
+            setTimeout(function() {
+                $('.modal').modal('hide');
+            }, 1000);
+        });
+    });
+    
+    // Reset form khi modal đóng
+    $('.modal').on('hidden.bs.modal', function() {
+        $(this).find('form')[0].reset();
+    });
+});
+</script>
+{% endblock %}

@@ -429,7 +429,6 @@ class AdministrativeRegion(models.Model):
     class Meta:
         db_table = 'administrative_region'
 
-
 class InsectDistribution(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Chờ duyệt'),
@@ -449,7 +448,9 @@ class InsectDistribution(models.Model):
 
     region = models.ForeignKey(
         AdministrativeRegion,
-        on_delete=models.PROTECT
+        on_delete=models.PROTECT,
+        null=True,  # THÊM NULLABLE
+        blank=True   # THÊM BLANK
     )
 
     latitude = models.DecimalField(max_digits=9, decimal_places=6)
@@ -467,10 +468,24 @@ class InsectDistribution(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     approved_at = models.DateTimeField(null=True, blank=True)
+    
+    observation_image = models.ImageField(
+        upload_to='distribution_images/',
+        null=True,
+        blank=True
+    )
+    
+    # THÊM FIELD NÀY
+    gps_from_image = models.BooleanField(default=False, verbose_name="GPS từ ảnh")
+    
+    # THÊM FIELD NÀY (tùy chọn)
+    image_credit = models.CharField(max_length=255, blank=True, null=True, verbose_name="Nguồn ảnh")
 
     class Meta:
         db_table = 'insect_distribution'
-
+        
+    def __str__(self):
+        return f"{self.species.name} - {self.latitude}, {self.longitude}"
 
 class DistributionReviewLog(models.Model):
     ROLE_CHOICES = [
@@ -481,6 +496,7 @@ class DistributionReviewLog(models.Model):
     ACTION_CHOICES = [
         ('approve', 'Đồng ý'),
         ('reject', 'Từ chối'),
+        ('edit_bbox', 'Chỉnh sửa bounding box'),
     ]
 
     id = models.AutoField(primary_key=True)
@@ -513,6 +529,23 @@ class Crop(models.Model):
     scientific_name = models.CharField(max_length=255, blank=True)
     description = models.TextField(blank=True)
 
+    economic_value = models.TextField(
+            blank=True,
+            null=True,
+            verbose_name="Giá trị kinh tế"
+        )
+
+    morphology = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Đặc điểm hình thái"
+    )
+
+    cultivation_area = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Vùng trồng phổ biến"
+    )
     class Meta:
         db_table = 'crop'
 
@@ -546,3 +579,25 @@ class InsectCropDamage(models.Model):
 
     class Meta:
         db_table = 'insect_crop_damage'
+
+class DistributionBoundingBox(models.Model):
+    id = models.AutoField(primary_key=True)
+
+    distribution = models.ForeignKey(
+        InsectDistribution,
+        on_delete=models.CASCADE,
+        related_name='bboxes'
+    )
+
+    x = models.FloatField()
+    y = models.FloatField()
+    width = models.FloatField()
+    height = models.FloatField()
+
+    confidence = models.FloatField(default=0)
+    label = models.CharField(max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'distribution_bbox'

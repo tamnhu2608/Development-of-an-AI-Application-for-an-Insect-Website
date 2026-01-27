@@ -404,8 +404,18 @@ function loadDistributionData(filters = {}) {
             
             // Nếu có dữ liệu, zoom đến tất cả markers
             if (data.length > 0 && markersLayer.getBounds().isValid()) {
-                map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
+
+                const isOtherRegion = data.every(p => p.region?.name === 'Khác');
+
+                if (isOtherRegion) {
+                    // Zoom toàn cầu
+                    map.setView([20, 0], 2);
+                } else {
+                    // Zoom theo marker (Việt Nam hoặc khu vực cụ thể)
+                    map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
+                }
             }
+
             
         })
         .catch(error => {
@@ -454,7 +464,7 @@ function createPopupContent(point) {
             </div>
             <div class="text-center mt-2">
                 ${point.species?.slug ? 
-                    `<a href="/detail/${point.species.slug}/" class="btn btn-sm btn-outline-primary" target="_blank">
+                    `<a href="/detail/${point.species.slug}/" class="btn btn-sm btn-outline-primary" >
                         <i class="fas fa-info-circle"></i> Chi tiết loài
                     </a>` : ''}
             </div>
@@ -522,7 +532,7 @@ function showInfoPanel(point) {
             
             <div class="text-center mt-2">
                 ${point.species?.slug ? `
-                <a href="/detail/${point.species.slug}/" class="btn btn-primary btn-sm" target="_blank">
+                <a href="/detail/${point.species.slug}/" class="btn btn-primary btn-sm" >
                     <i class="fas fa-external-link-alt"></i> Xem chi tiết loài
                 </a>
                 ` : ''}
@@ -650,7 +660,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(data => {
                     regionSelect.innerHTML = '<option value="">Chọn khu vực...</option>';
                     data.forEach(region => {
-                        regionSelect.innerHTML += `<option value="${region.id}">${region.name}</option>`;
+                        let label = region.name;
+                        if (region.name === 'Khác') {
+                            label = 'Khác';
+                        }
+                        regionSelect.innerHTML += `<option value="${region.id}">${label}</option>`;
                     });
                 })
                 .catch(error => {

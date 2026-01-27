@@ -1,0 +1,1023 @@
+{% extends "template_v2.html" %}
+{% load static %}
+
+{% block title %}Quản lý cây trồng & côn trùng gây hại{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Tabs */
+    .nav-tabs .nav-link {
+        color: #6c757d;
+        font-weight: 500;
+    }
+    
+    .nav-tabs .nav-link.active {
+        color: #0d6efd;
+        font-weight: 600;
+        border-bottom: 3px solid #0d6efd;
+    }
+    
+    /* Card styles */
+    .card-header {
+        padding: 0.75rem 1rem;
+        font-weight: 600;
+    }
+    
+    .table th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+    
+    .table td {
+        font-size: 0.875rem;
+        vertical-align: middle;
+    }
+    
+    /* Badge styles */
+    .badge-low {
+        background-color: #28a745 !important;
+        color: white;
+    }
+    
+    .badge-medium {
+        background-color: #ffc107 !important;
+        color: #212529;
+    }
+    
+    .badge-high {
+        background-color: #dc3545 !important;
+        color: white;
+    }
+    
+    .badge-pending {
+        background-color: #6c757d !important;
+        color: white;
+    }
+    
+    .badge-expert_approved {
+        background-color: #17a2b8 !important;
+        color: white;
+    }
+    
+    .badge-admin_approved {
+        background-color: #20c997 !important;
+        color: white;
+    }
+    
+    .badge-rejected {
+        background-color: #6c757d !important;
+        color: white;
+    }
+    
+    /* Button groups */
+    .btn-group-sm > .btn {
+        padding: 0.2rem 0.4rem;
+    }
+    
+    /* Form styles */
+    .form-label {
+        font-weight: 500;
+        margin-bottom: 0.3rem;
+    }
+    
+    .required-field::after {
+        content: " *";
+        color: #dc3545;
+    }
+    
+    /* Modal styles */
+    .modal-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    /* Scrollable tables */
+    .table-container {
+        max-height: 400px;
+        overflow-y: auto;
+        position: relative;
+    }
+    
+    .table-container thead {
+        position: sticky;
+        top: 0;
+        background-color: #f8f9fa;
+        z-index: 10;
+    }
+    
+    /* Loading spinner */
+    .spinner-border {
+        width: 1rem;
+        height: 1rem;
+    }
+    
+    /* Toast notifications */
+    .toast-container {
+        position: fixed;
+        bottom: 1rem;
+        right: 1rem;
+        z-index: 1055;
+    }
+    
+    /* Empty state */
+    .empty-state {
+        padding: 3rem 1rem;
+        text-align: center;
+        color: #6c757d;
+    }
+    
+    .empty-state i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+    
+    /* Search input */
+    .search-box {
+        position: relative;
+    }
+    
+    .search-box .form-control {
+        padding-left: 2.5rem;
+    }
+    
+    .search-box i {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6c757d;
+    }
+    
+    /* Status filter */
+    .status-filter .btn {
+        margin-right: 0.25rem;
+        margin-bottom: 0.25rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-0">
+                <i class="fas fa-seedling text-success"></i>
+                Quản lý cây trồng & côn trùng gây hại
+            </h2>
+            <p class="text-muted">Thêm, xóa, sửa các cây trồng bị côn trùng gây hại</p>
+        </div>
+    </div>
+
+    <!-- Thông báo -->
+    {% if messages %}
+    <div class="row mb-3">
+        <div class="col-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-4" id="cropManagementTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="crops-tab" data-bs-toggle="tab" data-bs-target="#crops" type="button" role="tab">
+                <i class="fas fa-leaf"></i> Danh sách cây trồng
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="damage-tab" data-bs-toggle="tab" data-bs-target="#damage" type="button" role="tab">
+                <i class="fas fa-bug"></i> Mối quan hệ gây hại
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="add-crop-tab" data-bs-toggle="tab" data-bs-target="#add-crop" type="button" role="tab">
+                <i class="fas fa-plus-circle"></i> Thêm cây trồng mới
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab content -->
+    <div class="tab-content" id="cropManagementTabContent">
+        <!-- Tab 1: Danh sách cây trồng -->
+        <div class="tab-pane fade show active" id="crops" role="tabpanel">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="fas fa-list"></i> Danh sách cây trồng</h6>
+                    <div class="search-box" style="width: 300px;">
+                        <i class="fas fa-search"></i>
+                        <input type="text" class="form-control form-control-sm" id="search-crops" placeholder="Tìm kiếm cây trồng...">
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-hover" id="crops-table">
+                            <thead>
+                                <tr>
+                                    <th width="50">#</th>
+                                    <th>Tên cây trồng</th>
+                                    <th>Tên khoa học</th>
+                                    <th>Mô tả</th>
+                                    <th>Số loài gây hại</th>
+                                    <th width="100">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for crop in crops %}
+                                <tr data-crop-id="{{ crop.id }}">
+                                    <td>{{ forloop.counter }}</td>
+                                    <td>
+                                        <strong>{{ crop.name }}</strong>
+                                    </td>
+                                    <td>
+                                        {% if crop.scientific_name %}
+                                            <em>{{ crop.scientific_name }}</em>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if crop.description %}
+                                            <small>{{ crop.description|truncatechars:50 }}</small>
+                                        {% else %}
+                                            <small class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-info">
+                                            {{ crop.insectcropdamage_set.count }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-primary btn-sm edit-crop-btn"
+                                                    data-id="{{ crop.id }}"
+                                                    data-name="{{ crop.name }}"
+                                                    data-scientific_name="{{ crop.scientific_name|default:'' }}"
+                                                    data-description="{{ crop.description|default:'' }}"
+                                                    data-economic_value="{{ crop.economic_value|default:'' }}"
+                                                    data-morphology="{{ crop.morphology|default:'' }}"
+                                                    data-cultivation_area="{{ crop.cultivation_area|default:'' }}">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger btn-sm delete-crop-btn"
+                                                    data-id="{{ crop.id }}"
+                                                    data-name="{{ crop.name }}">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                            <a href="{% url 'crop_detail' crop.id %}" 
+                                               class="btn btn-outline-info btn-sm"
+                                               target="_blank">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center py-4">
+                                        <div class="empty-state">
+                                            <i class="fas fa-seedling"></i>
+                                            <h5>Chưa có cây trồng nào</h5>
+                                            <p class="mb-0">Hãy thêm cây trồng đầu tiên</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Mối quan hệ gây hại -->
+        <div class="tab-pane fade" id="damage" role="tabpanel">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="fas fa-bug"></i> Danh sách mối quan hệ gây hại</h6>
+                    <div>
+                        <div class="btn-group status-filter" role="group">
+                            <button type="button" class="btn btn-sm btn-outline-secondary active" data-status="all">Tất cả</button>
+                            <button type="button" class="btn btn-sm btn-outline-info" data-status="pending">Chờ duyệt</button>
+                            <button type="button" class="btn btn-sm btn-outline-warning" data-status="expert_approved">Chuyên gia duyệt</button>
+                            <button type="button" class="btn btn-sm btn-outline-success" data-status="admin_approved">Admin duyệt</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" data-status="rejected">Từ chối</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-hover" id="damages-table">
+                            <thead>
+                                <tr>
+                                    <th width="50">#</th>
+                                    <th>Cây trồng</th>
+                                    <th>Côn trùng</th>
+                                    <th>Mức độ</th>
+                                    <th>Mô tả</th>
+                                    <th>Trạng thái</th>
+                                    <th>Người tạo</th>
+                                    <th>Thời gian</th>
+                                    <th width="120">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for damage in damages %}
+                                <tr data-damage-id="{{ damage.id }}" data-status="{{ damage.status }}">
+                                    <td>{{ forloop.counter }}</td>
+                                    <td>
+                                        <strong>{{ damage.crop.name }}</strong>
+                                    </td>
+                                    <td>
+                                        <small class="d-block">{{ damage.species.name }}</small>
+                                        <small class="text-muted">{{ damage.species.ename }}</small>
+                                    </td>
+                                    <td>
+                                        {% if damage.damage_level == 'low' %}
+                                            <span class="badge badge-low">Nhẹ</span>
+                                        {% elif damage.damage_level == 'medium' %}
+                                            <span class="badge badge-medium">Trung bình</span>
+                                        {% elif damage.damage_level == 'high' %}
+                                            <span class="badge badge-high">Nặng</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if damage.description %}
+                                            <small>{{ damage.description|truncatechars:50 }}</small>
+                                        {% else %}
+                                            <small class="text-muted">-</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if damage.status == 'pending' %}
+                                            <span class="badge badge-pending">Chờ duyệt</span>
+                                        {% elif damage.status == 'expert_approved' %}
+                                            <span class="badge badge-expert_approved">Chuyên gia duyệt</span>
+                                        {% elif damage.status == 'admin_approved' %}
+                                            <span class="badge badge-admin_approved">Admin duyệt</span>
+                                        {% elif damage.status == 'rejected' %}
+                                            <span class="badge badge-rejected">Từ chối</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small>{{ damage.created_by.username }}</small>
+                                    </td>
+                                    <td>
+                                        <small>{{ damage.created_at|date:"d/m/Y H:i" }}</small>
+                                    </td>
+                                    <td>
+                                        {% if damage.status in 'pending,expert_approved' %}
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-warning btn-sm edit-damage-btn"
+                                                    data-id="{{ damage.id }}"
+                                                    data-crop_id="{{ damage.crop.id }}"
+                                                    data-species_id="{{ damage.species.id }}"
+                                                    data-damage_level="{{ damage.damage_level }}"
+                                                    data-description="{{ damage.description|default:'' }}">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger btn-sm delete-damage-btn"
+                                                    data-id="{{ damage.id }}">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                        {% else %}
+                                        <small class="text-muted">Không thể chỉnh sửa</small>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="9" class="text-center py-4">
+                                        <div class="empty-state">
+                                            <i class="fas fa-times-circle"></i>
+                                            <h5>Chưa có mối quan hệ gây hại nào</h5>
+                                            <p class="mb-0">Hãy thêm mối quan hệ gây hại đầu tiên</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: Thêm cây trồng mới -->
+        <div class="tab-pane fade" id="add-crop" role="tabpanel">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h6 class="mb-0"><i class="fas fa-plus-circle"></i> Thêm cây trồng mới</h6>
+                </div>
+                <div class="card-body">
+                    <form id="add-crop-form">
+                        {% csrf_token %}
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label required-field">Tên cây trồng</label>
+                                <input type="text" name="name" class="form-control" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Tên khoa học</label>
+                                <input type="text" name="scientific_name" class="form-control">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Mô tả</label>
+                            <textarea name="description" class="form-control" rows="3"></textarea>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Giá trị kinh tế</label>
+                            <textarea name="economic_value" class="form-control" rows="2"></textarea>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Đặc điểm hình thái</label>
+                                <textarea name="morphology" class="form-control" rows="3"></textarea>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Vùng trồng phổ biến</label>
+                                <textarea name="cultivation_area" class="form-control" rows="3"></textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save"></i> Thêm cây trồng
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal thêm mối quan hệ gây hại -->
+<div class="modal fade" id="addDamageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus"></i> Thêm mối quan hệ gây hại
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="add-damage-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_damage">
+                
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label required-field">Cây trồng</label>
+                        <select name="crop_id" class="form-select" required>
+                            <option value="">-- Chọn cây trồng --</option>
+                            {% for crop in crops %}
+                                <option value="{{ crop.id }}">{{ crop.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label required-field">Côn trùng</label>
+                        <select name="species_id" class="form-select" required>
+                            <option value="">-- Chọn côn trùng --</option>
+                            {% for species in species_list %}
+                                <option value="{{ species.insects_id }}">{{ species.ename }} ({{ species.name }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label required-field">Mức độ gây hại</label>
+                        <select name="damage_level" class="form-select" required>
+                            <option value="">-- Chọn mức độ --</option>
+                            <option value="low">Nhẹ</option>
+                            <option value="medium">Trung bình</option>
+                            <option value="high">Nặng</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Mô tả</label>
+                        <textarea name="description" class="form-control" rows="3" placeholder="Mô tả chi tiết về mức độ gây hại..."></textarea>
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-primary">Thêm</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal sửa mối quan hệ gây hại -->
+<div class="modal fade" id="editDamageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-edit"></i> Sửa mối quan hệ gây hại
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="edit-damage-form">
+                {% csrf_token %}
+                <input type="hidden" name="damage_id" id="edit-damage-id">
+                
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label required-field">Mức độ gây hại</label>
+                        <select name="damage_level" class="form-select" required id="edit-damage-level">
+                            <option value="low">Nhẹ</option>
+                            <option value="medium">Trung bình</option>
+                            <option value="high">Nặng</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Mô tả</label>
+                        <textarea name="description" class="form-control" rows="3" id="edit-damage-description"></textarea>
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-warning">Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal sửa cây trồng -->
+<div class="modal fade" id="editCropModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-edit"></i> Sửa cây trồng
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="edit-crop-form">
+                {% csrf_token %}
+                <input type="hidden" name="crop_id" id="edit-crop-id">
+                
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label required-field">Tên cây trồng</label>
+                            <input type="text" name="name" class="form-control" required id="edit-crop-name">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Tên khoa học</label>
+                            <input type="text" name="scientific_name" class="form-control" id="edit-crop-scientific">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Mô tả</label>
+                        <textarea name="description" class="form-control" rows="3" id="edit-crop-description"></textarea>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Giá trị kinh tế</label>
+                        <textarea name="economic_value" class="form-control" rows="2" id="edit-crop-economic"></textarea>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Đặc điểm hình thái</label>
+                            <textarea name="morphology" class="form-control" rows="3" id="edit-crop-morphology"></textarea>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Vùng trồng phổ biến</label>
+                            <textarea name="cultivation_area" class="form-control" rows="3" id="edit-crop-cultivation"></textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                    <button type="submit" class="btn btn-warning">Cập nhật</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// ==================== GLOBAL VARIABLES ====================
+let csrftoken = getCookie('csrftoken');
+
+// ==================== UTILITY FUNCTIONS ====================
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function showToast(message, type = 'info') {
+    const toastId = 'toast-' + Date.now();
+    const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-bg-${type} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    ${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    `;
+    
+    const container = document.querySelector('.toast-container');
+    container.insertAdjacentHTML('beforeend', toastHtml);
+    
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement, { delay: 3000 });
+    toast.show();
+    
+    toastElement.addEventListener('hidden.bs.toast', function() {
+        toastElement.remove();
+    });
+}
+
+// ==================== CROP MANAGEMENT ====================
+// Thêm cây trồng mới
+document.getElementById('add-crop-form')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const submitBtn = this.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Đang xử lý...';
+    
+    try {
+        const response = await fetch('/expert/add-crop/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken
+            },
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            this.reset();
+            
+            // Reload page after 1 second
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showToast(data.error, 'danger');
+        }
+    } catch (error) {
+        showToast('Lỗi kết nối: ' + error.message, 'danger');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+});
+
+// Sửa cây trồng
+document.querySelectorAll('.edit-crop-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const cropId = this.getAttribute('data-id');
+        const cropName = this.getAttribute('data-name');
+        const scientificName = this.getAttribute('data-scientific_name');
+        const description = this.getAttribute('data-description');
+        const economicValue = this.getAttribute('data-economic_value');
+        const morphology = this.getAttribute('data-morphology');
+        const cultivationArea = this.getAttribute('data-cultivation_area');
+        
+        document.getElementById('edit-crop-id').value = cropId;
+        document.getElementById('edit-crop-name').value = cropName;
+        document.getElementById('edit-crop-scientific').value = scientificName;
+        document.getElementById('edit-crop-description').value = description;
+        document.getElementById('edit-crop-economic').value = economicValue;
+        document.getElementById('edit-crop-morphology').value = morphology;
+        document.getElementById('edit-crop-cultivation').value = cultivationArea;
+        
+        const modal = new bootstrap.Modal(document.getElementById('editCropModal'));
+        modal.show();
+    });
+});
+
+document.getElementById('edit-crop-form')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const cropId = document.getElementById('edit-crop-id').value;
+    const formData = new FormData(this);
+    
+    const submitBtn = this.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Đang xử lý...';
+    
+    try {
+        const response = await fetch(`/expert/edit-crop/${cropId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken
+            },
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editCropModal'));
+            modal.hide();
+            
+            // Reload page after 1 second
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showToast(data.error, 'danger');
+        }
+    } catch (error) {
+        showToast('Lỗi kết nối: ' + error.message, 'danger');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+});
+
+// Xóa cây trồng
+document.querySelectorAll('.delete-crop-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const cropId = this.getAttribute('data-id');
+        const cropName = this.getAttribute('data-name');
+        
+        if (confirm(`Bạn có chắc chắn muốn xóa cây trồng "${cropName}"?`)) {
+            deleteCrop(cropId);
+        }
+    });
+});
+
+async function deleteCrop(cropId) {
+    try {
+        const response = await fetch(`/expert/delete-crop/${cropId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            // Reload page after 1 second
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showToast(data.error, 'danger');
+        }
+    } catch (error) {
+        showToast('Lỗi kết nối: ' + error.message, 'danger');
+    }
+}
+
+// ==================== DAMAGE RELATIONSHIP MANAGEMENT ====================
+// Thêm nút thêm mối quan hệ gây hại (thêm vào header của tab damage)
+const damageTab = document.querySelector('#damage .card-header');
+if (damageTab) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn btn-primary btn-sm ms-2';
+    addBtn.innerHTML = '<i class="fas fa-plus"></i> Thêm mối quan hệ';
+    addBtn.addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('addDamageModal'));
+        modal.show();
+    });
+    damageTab.querySelector('h6').appendChild(addBtn);
+}
+
+// Thêm mối quan hệ gây hại
+document.getElementById('add-damage-form')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    const submitBtn = this.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Đang xử lý...';
+    
+    try {
+        const response = await fetch('/expert/add-damage/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken
+            },
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            this.reset();
+            
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addDamageModal'));
+            modal.hide();
+            
+            // Reload page after 1 second
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showToast(data.error, 'danger');
+        }
+    } catch (error) {
+        showToast('Lỗi kết nối: ' + error.message, 'danger');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+});
+
+// Sửa mối quan hệ gây hại
+document.querySelectorAll('.edit-damage-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const damageId = this.getAttribute('data-id');
+        const damageLevel = this.getAttribute('data-damage_level');
+        const description = this.getAttribute('data-description');
+        
+        document.getElementById('edit-damage-id').value = damageId;
+        document.getElementById('edit-damage-level').value = damageLevel;
+        document.getElementById('edit-damage-description').value = description;
+        
+        const modal = new bootstrap.Modal(document.getElementById('editDamageModal'));
+        modal.show();
+    });
+});
+
+document.getElementById('edit-damage-form')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const damageId = document.getElementById('edit-damage-id').value;
+    const formData = new FormData(this);
+    
+    const submitBtn = this.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Đang xử lý...';
+    
+    try {
+        const response = await fetch(`/expert/edit-damage/${damageId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken
+            },
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editDamageModal'));
+            modal.hide();
+            
+            // Reload page after 1 second
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showToast(data.error, 'danger');
+        }
+    } catch (error) {
+        showToast('Lỗi kết nối: ' + error.message, 'danger');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+});
+
+// Xóa mối quan hệ gây hại
+document.querySelectorAll('.delete-damage-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const damageId = this.getAttribute('data-id');
+        
+        if (confirm('Bạn có chắc chắn muốn xóa mối quan hệ gây hại này?')) {
+            deleteDamage(damageId);
+        }
+    });
+});
+
+async function deleteDamage(damageId) {
+    try {
+        const response = await fetch(`/expert/delete-damage/${damageId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast(data.message, 'success');
+            // Reload page after 1 second
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            showToast(data.error, 'danger');
+        }
+    } catch (error) {
+        showToast('Lỗi kết nối: ' + error.message, 'danger');
+    }
+}
+
+// ==================== SEARCH AND FILTER ====================
+// Tìm kiếm cây trồng
+document.getElementById('search-crops')?.addEventListener('input', function() {
+    const searchTerm = this.value.toLowerCase();
+    const rows = document.querySelectorAll('#crops-table tbody tr');
+    
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(searchTerm) ? '' : 'none';
+    });
+});
+
+// Lọc theo trạng thái
+document.querySelectorAll('.status-filter .btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        // Update active button
+        document.querySelectorAll('.status-filter .btn').forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        
+        const status = this.getAttribute('data-status');
+        const rows = document.querySelectorAll('#damages-table tbody tr');
+        
+        rows.forEach(row => {
+            if (status === 'all') {
+                row.style.display = '';
+            } else {
+                const rowStatus = row.getAttribute('data-status');
+                row.style.display = rowStatus === status ? '' : 'none';
+            }
+        });
+    });
+});
+
+// ==================== INITIALIZATION ====================
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Crop management page initialized');
+    
+    // Kiểm tra URL hash để chọn tab đúng
+    const hash = window.location.hash;
+    if (hash) {
+        const tab = document.querySelector(`a[href="${hash}"]`);
+        if (tab) {
+            tab.click();
+        }
+    }
+});
+</script>
+{% endblock %}

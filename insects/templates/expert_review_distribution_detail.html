@@ -1,0 +1,1126 @@
+{% extends "template_v2.html" %}
+{% load static %}
+
+{% block title %}Xét duyệt chi tiết - Đóng góp phân bố{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'expert_review_distribution' %}">Xét duyệt phân bố</a></li>
+            <li class="breadcrumb-item active">Chi tiết </li>
+        </ol>
+    </nav>
+    
+    <!-- Thông báo nếu đã duyệt rồi -->
+    {% if already_reviewed %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Thông báo:</strong> Bạn đã xét duyệt đóng góp này rồi.
+        {% if previous_review %}
+            <div class="mt-2">
+                <strong>Kết quả duyệt trước:</strong> 
+                {% if previous_review.action == 'approve' %}
+                    <span class="badge bg-success">Đã phê duyệt</span>
+                {% else %}
+                    <span class="badge bg-danger">Đã từ chối</span>
+                {% endif %}
+                {% if previous_review.comment %}
+                    <div class="mt-1"><strong>Nhận xét:</strong> {{ previous_review.comment }}</div>
+                {% endif %}
+                <div class="mt-1"><strong>Thời gian:</strong> {{ previous_review.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+        {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- Thông tin duyệt hiện tại -->
+    <div class="card mb-3">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0"><i class="fas fa-clipboard-list"></i> Thông tin xét duyệt</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <p><strong><i class="fas fa-users"></i> Số chuyên gia đã duyệt:</strong> 
+                        <span class="badge bg-info">{{ total_reviewed }}/3</span>
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <p><strong><i class="fas fa-check-circle"></i> Số chuyên gia phê duyệt:</strong> 
+                        <span class="badge bg-success">{{ approved_count }}/3</span>
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <p><strong><i class="fas fa-clock"></i> Cần thêm chuyên gia:</strong> 
+                        <span class="badge bg-warning">{{ remaining_needed }}</span>
+                    </p>
+                </div>
+            </div>
+            {% if approved_count >= 3 %}
+            <div class="alert alert-success mt-2 mb-0">
+                <i class="fas fa-check-circle me-2"></i>
+                <strong>Đã đủ 3 chuyên gia phê duyệt!</strong> Đóng góp này đã sẵn sàng cho admin xét duyệt cuối cùng.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Thông tin cơ bản -->
+    <div class="card mb-4">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0"><i class="fas fa-info-circle"></i> Thông tin đóng góp</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <p><strong><i class="fas fa-user"></i> Người gửi:</strong> {{ distribution.created_by.username }}</p>
+                    <p><strong><i class="fas fa-bug"></i> Loài:</strong> {{ distribution.species.name }}</p>
+                    <p><strong><i class="fas fa-microscope"></i> Tên khoa học:</strong> {{ distribution.species.ename }}</p>
+                    <p><strong><i class="fas fa-map-marker"></i> Khu vực:</strong> {{ distribution.region.name|default:"Không xác định" }}</p>
+                </div>
+                <div class="col-md-6">
+                    <p><strong><i class="fas fa-globe"></i> Tọa độ:</strong> {{ distribution.latitude }}, {{ distribution.longitude }}</p>
+                    <p><strong><i class="fas fa-calendar"></i> Ngày quan sát:</strong> {{ distribution.observation_date|date:"d/m/Y"|default:"Không có" }}</p>
+                    <p><strong><i class="fas fa-clock"></i> Ngày gửi:</strong> {{ distribution.created_at|date:"d/m/Y H:i" }}</p>
+                    <p><strong><i class="fas fa-tag"></i> Trạng thái:</strong> 
+                        {% if distribution.status == 'pending' %}
+                            <span class="badge bg-warning">Chờ chuyên gia duyệt</span>
+                        {% elif distribution.status == 'expert_approved' %}
+                            <span class="badge bg-success">Đã đủ chuyên gia duyệt</span>
+                        {% elif distribution.status == 'expert_rejected' %}
+                            <span class="badge bg-danger">Chuyên gia từ chối</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ distribution.status }}</span>
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+            
+            {% if distribution.note %}
+            <div class="mt-3 alert alert-light">
+                <strong><i class="fas fa-sticky-note"></i> Ghi chú:</strong>
+                <p class="mb-0 mt-2">{{ distribution.note }}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Phần ảnh và bounding box -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="fas fa-image"></i> Ảnh & Bounding Box</h5>
+        </div>
+        <div class="card-body">
+            {% if has_image %}
+                <!-- Thông tin bbox -->
+                <div class="alert alert-info mb-3">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p><strong><i class="fas fa-layer-group"></i> Số lượng BBox:</strong> 
+                                <span id="bbox-count" class="badge bg-primary">{{ bbox_count }}</span>
+                            </p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong><i class="fas fa-expand"></i> Kích thước ảnh:</strong> {{ image_width }}x{{ image_height }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p><strong><i class="fas fa-database"></i> ID:</strong> {{ distribution.id }}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Vùng hiển thị ảnh -->
+                <div class="text-center mb-3">
+                    <div class="image-container">
+                        <canvas id="bbox-canvas" width="800" height="600"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Loading indicator -->
+                <div id="loading-indicator" class="text-center mb-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Đang tải ảnh...</span>
+                    </div>
+                    <p class="mt-2">Đang tải ảnh...</p>
+                </div>
+                
+                <!-- Error message -->
+                <div id="error-message" class="alert alert-danger d-none">
+                    <strong><i class="fas fa-exclamation-triangle"></i> Lỗi tải ảnh!</strong>
+                    <p id="error-detail"></p>
+                    <div class="mt-2">
+                        <a href="{{ image_url }}" target="_blank" class="btn btn-sm btn-outline-danger">
+                            <i class="fas fa-external-link-alt"></i> Mở ảnh trong tab mới
+                        </a>
+                        <button onclick="retryLoadImage()" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="fas fa-redo"></i> Thử lại
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Controls -->
+                <div class="canvas-controls mt-3" id="controls-panel" style="display: none;">
+                    <div class="row align-items-center mb-3">
+                        <div class="col-md-8">
+                            <div class="btn-group" role="group">
+                                <button class="btn btn-warning btn-sm" onclick="toggleEditMode()" id="edit-btn">
+                                    <i class="fas fa-edit"></i> Chỉnh sửa
+                                </button>
+                                <button class="btn btn-primary btn-sm" onclick="saveBBoxes()" id="save-btn" disabled>
+                                    <i class="fas fa-save"></i> Lưu thay đổi
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="resetToOriginal()" id="reset-btn">
+                                    <i class="fas fa-undo"></i> Khôi phục
+                                </button>
+                                <button class="btn btn-success btn-sm" onclick="addNewBBox()" id="add-btn">
+                                    <i class="fas fa-plus"></i> Thêm BBox
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteSelected()" id="delete-btn" disabled>
+                                    <i class="fas fa-trash"></i> Xóa chọn
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <span id="save-status" class="text-muted"><i class="fas fa-info-circle"></i> Chưa có thay đổi</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Chỉnh sửa label -->
+                    <div id="edit-label-panel" class="mt-3" style="display: none;">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text"><i class="fas fa-tag"></i> Nhãn:</span>
+                            <input type="text" id="label-input" class="form-control" placeholder="Nhập nhãn cho bounding box...">
+                            <button class="btn btn-success btn-sm" onclick="updateSelectedLabel()">
+                                <i class="fas fa-check"></i> Cập nhật
+                            </button>
+                        </div>
+                        <div class="form-text mt-1">
+                            <i class="fas fa-mouse-pointer"></i> Chọn một bounding box để chỉnh sửa nhãn
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Ẩn: Thông tin ảnh cho JavaScript -->
+                <div id="image-metadata" 
+                     data-url="{{ image_url }}" 
+                     data-natural-width="{{ image_width }}"
+                     data-natural-height="{{ image_height }}"
+                     style="display: none;"></div>
+                
+                <!-- Bbox data (ẩn) -->
+                <textarea id="bbox-metadata" style="display: none;">{{ bboxes_json|default:'[]' }}</textarea>
+            {% else %}
+                <div class="alert alert-warning text-center py-4">
+                    <i class="fas fa-exclamation-triangle fa-3x mb-3 text-warning"></i>
+                    <h5>Không có ảnh đính kèm</h5>
+                    <p class="mb-0">Đóng góp này không có ảnh đi kèm.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Phần xét duyệt - CHỈ HIỂN THỊ NẾU CHƯA DUYỆT -->
+    {% if not already_reviewed %}
+    <div class="card">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fas fa-clipboard-check"></i> Xét duyệt đóng góp</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" id="review-form">
+                {% csrf_token %}
+                
+                <div class="mb-3">
+                    <label for="comment" class="form-label">
+                        <i class="fas fa-comment-dots"></i> Nhận xét của bạn:
+                    </label>
+                    <textarea 
+                        name="comment" 
+                        id="comment" 
+                        class="form-control" 
+                        rows="4" 
+                        placeholder="Nhập nhận xét của bạn tại đây..."></textarea>
+                    <div class="form-text mt-1">
+                        <i class="fas fa-info-circle"></i> Nhận xét là <strong>bắt buộc</strong> nếu bạn chọn "Từ chối"
+                    </div>
+                </div>
+                
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <button type="submit" name="action" value="approve" class="btn btn-success btn-lg">
+                            <i class="fas fa-check-circle"></i> Phê duyệt
+                        </button>
+                        <button type="submit" name="action" value="reject" class="btn btn-danger btn-lg ms-2" id="reject-btn">
+                            <i class="fas fa-times-circle"></i> Từ chối
+                        </button>
+                    </div>
+                    <a href="{% url 'expert_review_distribution' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Quay lại danh sách
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <!-- Nếu đã duyệt rồi, hiển thị nút quay lại -->
+    <div class="card">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0"><i class="fas fa-clipboard-check"></i> Xét duyệt</h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                Bạn đã xét duyệt đóng góp này rồi. Bạn không thể xét duyệt lại.
+            </div>
+            <div class="text-center">
+                <a href="{% url 'expert_review_distribution' %}" class="btn btn-primary btn-lg">
+                    <i class="fas fa-arrow-left"></i> Quay lại danh sách xét duyệt
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Load Fabric.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/4.5.0/fabric.min.js"></script>
+
+<script>
+// ==================== GLOBAL VARIABLES ====================
+let canvas = null;
+let isEditMode = false;
+let originalBboxes = [];
+let imageLoaded = false;
+let currentScale = 1;
+let bboxObjects = []; // Lưu trữ thông tin các bbox
+let hasUnsavedChanges = false;
+let alreadyReviewed = {{ already_reviewed|yesno:"true,false" }};
+
+// ==================== INITIALIZATION ====================
+document.addEventListener("DOMContentLoaded", function() {
+    console.log("Initializing page...");
+    
+    // Initialize canvas
+    initializeCanvas();
+    
+    // Load image and bounding boxes
+    setTimeout(() => {
+        loadImageAndBBoxes();
+    }, 100);
+    
+    // Setup form validation (chỉ nếu chưa duyệt)
+    if (!alreadyReviewed) {
+        setupFormValidation();
+    }
+});
+
+function initializeCanvas() {
+    try {
+        canvas = new fabric.Canvas('bbox-canvas', {
+            selection: true,
+            preserveObjectStacking: true,
+            backgroundColor: '#f8f9fa',
+            width: 800,
+            height: 600
+        });
+        
+        // Setup event listeners
+        canvas.on('selection:created', onSelectionChanged);
+        canvas.on('selection:updated', onSelectionChanged);
+        canvas.on('selection:cleared', onSelectionChanged);
+        canvas.on('object:modified', onObjectModified);
+        canvas.on('object:moving', onObjectMoving);
+        canvas.on('object:scaling', onObjectScaling);
+        
+        console.log("Canvas initialized successfully");
+        
+    } catch (e) {
+        console.error("Canvas initialization error:", e);
+        showError("Không thể khởi tạo canvas: " + e.message);
+    }
+}
+
+function loadImageAndBBoxes() {
+    const imageMetadata = document.getElementById('image-metadata');
+    const imageUrl = imageMetadata?.dataset.url;
+    
+    if (!imageUrl) {
+        console.error("No image URL found");
+        showError("Không có URL ảnh");
+        return;
+    }
+    
+    console.log("Loading image from:", imageUrl);
+    
+    // Show loading
+    document.getElementById('loading-indicator').style.display = 'block';
+    document.getElementById('controls-panel').style.display = 'none';
+    
+    fabric.Image.fromURL(imageUrl, function(img) {
+        if (!img) {
+            throw new Error("Không thể tải ảnh");
+        }
+        
+        // Hide loading
+        document.getElementById('loading-indicator').style.display = 'none';
+        
+        imageLoaded = true;
+        processLoadedImage(img);
+        
+    }, {
+        crossOrigin: 'anonymous'
+    }, function(error) {
+        // Error handler
+        console.error("Image loading error:", error);
+        document.getElementById('loading-indicator').style.display = 'none';
+        showError("Không thể tải ảnh: " + (error.message || "Unknown error"));
+    });
+}
+
+function processLoadedImage(img) {
+    try {
+        console.log("Processing loaded image...");
+        
+        // Calculate scale to fit canvas
+        const canvasWidth = canvas.getWidth();
+        const canvasHeight = canvas.getHeight();
+        
+        const scaleX = canvasWidth / img.width;
+        const scaleY = canvasHeight / img.height;
+        currentScale = Math.min(scaleX, scaleY);
+        
+        console.log("Original image size:", img.width, img.height);
+        console.log("Canvas size:", canvasWidth, canvasHeight);
+        console.log("Scale factor:", currentScale);
+        
+        // Scale image
+        img.scale(currentScale);
+        
+        // Update canvas size to match scaled image
+        const scaledWidth = img.width * currentScale;
+        const scaledHeight = img.height * currentScale;
+        canvas.setWidth(scaledWidth);
+        canvas.setHeight(scaledHeight);
+        
+        console.log("Scaled image size:", scaledWidth, scaledHeight);
+        
+        // Set background image
+        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), {
+            crossOrigin: 'anonymous',
+            originX: 'left',
+            originY: 'top'
+        });
+        
+        // Draw bounding boxes
+        drawBoundingBoxes();
+        
+        // Update bbox count
+        document.getElementById('bbox-count').textContent = bboxObjects.length;
+        
+        // Show controls (chỉ nếu chưa duyệt)
+        if (!alreadyReviewed) {
+            document.getElementById('controls-panel').style.display = 'block';
+        }
+        
+        // Render
+        canvas.renderAll();
+        
+        console.log("Image processing completed successfully");
+        
+    } catch (e) {
+        console.error("Error processing image:", e);
+        showError("Lỗi xử lý ảnh: " + e.message);
+    }
+}
+
+function drawBoundingBoxes() {
+    const bboxMetadata = document.getElementById('bbox-metadata');
+    if (!bboxMetadata || !bboxMetadata.value || bboxMetadata.value.trim() === '') {
+        console.log("No bounding box data found");
+        return;
+    }
+    
+    try {
+        const bboxData = JSON.parse(bboxMetadata.value);
+        originalBboxes = JSON.parse(JSON.stringify(bboxData));
+        
+        console.log("Loaded bounding boxes:", bboxData.length);
+        console.log("BBox data:", bboxData);
+        
+        bboxData.forEach((bbox, index) => {
+            createBBoxGroup(bbox, index);
+        });
+        
+        console.log("Total bounding boxes drawn:", bboxObjects.length);
+        
+    } catch (e) {
+        console.error("Error drawing bounding boxes:", e);
+        showError("Lỗi vẽ bounding boxes: " + e.message);
+    }
+}
+
+function createBBoxGroup(bbox, index) {
+    if (!bbox || typeof bbox.x === 'undefined' || typeof bbox.y === 'undefined') {
+        console.warn("Invalid bbox data:", bbox);
+        return;
+    }
+    
+    console.log(`Creating bbox ${index}:`, bbox);
+    
+    try {
+        // Calculate canvas coordinates (normalized coords * canvas size)
+        const canvasWidth = canvas.getWidth();
+        const canvasHeight = canvas.getHeight();
+        
+        const left = bbox.x * canvasWidth;
+        const top = bbox.y * canvasHeight;
+        const width = bbox.width * canvasWidth;
+        const height = bbox.height * canvasHeight;
+        
+        console.log(`Canvas coords - left:${left}, top:${top}, width:${width}, height:${height}`);
+        
+        // Tạo rectangle với ID
+        const rectId = `rect-${index}`;
+        const rect = new fabric.Rect({
+            left: 0,
+            top: 0,
+            width: width,
+            height: height,
+            fill: 'rgba(255, 0, 0, 0.2)',
+            stroke: 'red',
+            strokeWidth: 2,
+            strokeUniform: true,
+            selectable: false,
+            hasControls: false,
+            hasBorders: false,
+            hoverCursor: 'default',
+            data: {
+                id: index,
+                type: 'rect',
+                label: bbox.label || ''
+            }
+        });
+        
+        // Tạo label text
+        const labelText = bbox.label || `BBox ${index + 1}`;
+        const label = new fabric.Text(labelText, {
+            left: 5,
+            top: 5,
+            fontSize: 12,
+            fill: 'white',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            padding: 2,
+            selectable: false,
+            hasControls: false,
+            hasBorders: false,
+            hoverCursor: 'default',
+            data: {
+                id: index,
+                type: 'label',
+                label: labelText
+            }
+        });
+        
+        // Tạo group (group position sẽ là top-left của bbox)
+        const group = new fabric.Group([rect, label], {
+            left: left,
+            top: top,
+            selectable: false,
+            hasControls: false,
+            hasBorders: false,
+            lockMovementX: true,
+            lockMovementY: true,
+            lockRotation: true,
+            lockScalingX: true,
+            lockScalingY: true,
+            data: {
+                id: index,
+                type: 'bbox-group',
+                label: labelText,
+                originalX: left,
+                originalY: top,
+                originalWidth: width,
+                originalHeight: height
+            }
+        });
+        
+        canvas.add(group);
+        
+        // Store reference
+        bboxObjects.push({
+            id: index,
+            group: group,
+            rect: rect,
+            label: label,
+            originalX: left,
+            originalY: top,
+            originalWidth: width,
+            originalHeight: height
+        });
+        
+        console.log(`BBox ${index} created successfully`);
+        
+        return group;
+        
+    } catch (e) {
+        console.error(`Error creating bbox ${index}:`, e);
+        return null;
+    }
+}
+
+// ==================== EDIT MODE FUNCTIONS ====================
+function toggleEditMode() {
+    if (alreadyReviewed) {
+        alert("⚠ Bạn đã duyệt đóng góp này rồi, không thể chỉnh sửa.");
+        return;
+    }
+    
+    if (!imageLoaded) {
+        alert("⚠ Vui lòng chờ ảnh tải xong");
+        return;
+    }
+    
+    if (!isEditMode) {
+        enableEditMode();
+    } else {
+        disableEditMode();
+    }
+}
+
+function enableEditMode() {
+    isEditMode = true;
+    
+    console.log("Enabling edit mode...");
+    
+    // Enable editing for all bbox groups
+    bboxObjects.forEach(bboxObj => {
+        bboxObj.group.set({
+            selectable: true,
+            hasControls: true,
+            hasBorders: true,
+            lockMovementX: false,
+            lockMovementY: false,
+            lockRotation: true,
+            lockScalingX: false,
+            lockScalingY: false,
+            cornerColor: 'blue',
+            cornerSize: 8,
+            transparentCorners: false
+        });
+    });
+    
+    // Update UI
+    document.getElementById('edit-btn').innerHTML = '<i class="fas fa-times"></i> Thoát chỉnh sửa';
+    document.getElementById('edit-btn').classList.remove('btn-warning');
+    document.getElementById('edit-btn').classList.add('btn-danger');
+    document.getElementById('save-btn').disabled = false;
+    document.getElementById('edit-label-panel').style.display = 'block';
+    
+    updateSaveStatus("Chế độ chỉnh sửa đã bật", "warning");
+    
+    console.log("Edit mode enabled");
+}
+
+function disableEditMode() {
+    isEditMode = false;
+    
+    console.log("Disabling edit mode...");
+    
+    // Disable editing for all bbox groups
+    bboxObjects.forEach(bboxObj => {
+        bboxObj.group.set({
+            selectable: false,
+            hasControls: false,
+            hasBorders: false,
+            lockMovementX: true,
+            lockMovementY: true,
+            lockRotation: true,
+            lockScalingX: true,
+            lockScalingY: true
+        });
+    });
+    
+    // Update UI
+    document.getElementById('edit-btn').innerHTML = '<i class="fas fa-edit"></i> Chỉnh sửa';
+    document.getElementById('edit-btn').classList.remove('btn-danger');
+    document.getElementById('edit-btn').classList.add('btn-warning');
+    document.getElementById('save-btn').disabled = true;
+    document.getElementById('edit-label-panel').style.display = 'none';
+    document.getElementById('label-input').value = '';
+    document.getElementById('delete-btn').disabled = true;
+    
+    canvas.discardActiveObject();
+    canvas.renderAll();
+    
+    updateSaveStatus("Chế độ chỉnh sửa đã tắt", "info");
+    
+    console.log("Edit mode disabled");
+}
+
+// ==================== BBOX OPERATIONS ====================
+function addNewBBox() {
+    if (alreadyReviewed) {
+        alert("⚠ Bạn đã duyệt đóng góp này rồi, không thể thêm bounding box.");
+        return;
+    }
+    
+    if (!isEditMode) {
+        alert("⚠ Vui lòng bật chế độ chỉnh sửa trước");
+        return;
+    }
+    
+    const newId = bboxObjects.length;
+    const canvasWidth = canvas.getWidth();
+    const canvasHeight = canvas.getHeight();
+    
+    // Tạo bbox mới ở giữa canvas (kích thước mặc định)
+    const newBbox = {
+        x: 0.3,
+        y: 0.3,
+        width: 0.2,
+        height: 0.2,
+        label: `BBox ${newId + 1}`,
+        confidence: 1.0
+    };
+    
+    const newGroup = createBBoxGroup(newBbox, newId);
+    
+    // Enable edit mode cho group mới
+    if (newGroup) {
+        newGroup.set({
+            selectable: true,
+            hasControls: true,
+            hasBorders: true,
+            lockMovementX: false,
+            lockMovementY: false,
+            lockRotation: true,
+            lockScalingX: false,
+            lockScalingY: false,
+            cornerColor: 'blue',
+            cornerSize: 8,
+            transparentCorners: false
+        });
+        
+        canvas.setActiveObject(newGroup);
+        onSelectionChanged();
+    }
+    
+    // Update bbox count
+    document.getElementById('bbox-count').textContent = bboxObjects.length;
+    document.getElementById('save-btn').disabled = false;
+    hasUnsavedChanges = true;
+    updateSaveStatus("Có thay đổi chưa lưu", "danger");
+    
+    canvas.renderAll();
+    
+    console.log("New bbox added, total:", bboxObjects.length);
+}
+
+function deleteSelected() {
+    if (alreadyReviewed) {
+        alert("⚠ Bạn đã duyệt đóng góp này rồi, không thể xóa bounding box.");
+        return;
+    }
+    
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject) {
+        alert("⚠ Vui lòng chọn một bounding box để xóa");
+        return;
+    }
+    
+    if (!confirm("Bạn có chắc muốn xóa bounding box này?")) {
+        return;
+    }
+    
+    // Tìm index của object trong bboxObjects
+    const index = bboxObjects.findIndex(obj => obj.group === activeObject);
+    if (index !== -1) {
+        // Xóa khỏi mảng bboxObjects
+        bboxObjects.splice(index, 1);
+    }
+    
+    // Xóa khỏi canvas
+    canvas.remove(activeObject);
+    canvas.discardActiveObject();
+    
+    // Update bbox count
+    document.getElementById('bbox-count').textContent = bboxObjects.length;
+    document.getElementById('save-btn').disabled = false;
+    document.getElementById('delete-btn').disabled = true;
+    hasUnsavedChanges = true;
+    updateSaveStatus("Có thay đổi chưa lưu", "danger");
+    
+    canvas.renderAll();
+    
+    console.log("BBox deleted, remaining:", bboxObjects.length);
+}
+
+function updateSelectedLabel() {
+    if (alreadyReviewed) {
+        alert("⚠ Bạn đã duyệt đóng góp này rồi, không thể chỉnh sửa nhãn.");
+        return;
+    }
+    
+    const activeObject = canvas.getActiveObject();
+    if (!activeObject) {
+        alert("⚠ Vui lòng chọn một bounding box trước");
+        return;
+    }
+    
+    const newLabel = document.getElementById('label-input').value.trim();
+    if (!newLabel) {
+        alert("⚠ Vui lòng nhập nhãn");
+        return;
+    }
+    
+    // Tìm bbox object tương ứng
+    const bboxObj = bboxObjects.find(obj => obj.group === activeObject);
+    if (bboxObj && bboxObj.label) {
+        // Cập nhật label text
+        bboxObj.label.set('text', newLabel);
+        
+        // Cập nhật data
+        bboxObj.group.data.label = newLabel;
+        bboxObj.rect.data.label = newLabel;
+        bboxObj.label.data.label = newLabel;
+        
+        canvas.renderAll();
+        document.getElementById('save-btn').disabled = false;
+        hasUnsavedChanges = true;
+        updateSaveStatus("Có thay đổi chưa lưu", "danger");
+        
+        alert("Đã cập nhật nhãn thành: " + newLabel);
+        
+        console.log("Label updated to:", newLabel);
+    }
+}
+
+function onSelectionChanged() {
+    const activeObject = canvas.getActiveObject();
+    const hasSelection = activeObject !== null;
+    
+    document.getElementById('delete-btn').disabled = !hasSelection;
+    
+    // Cập nhật label input khi chọn object
+    if (hasSelection && activeObject.type === 'group') {
+        const bboxObj = bboxObjects.find(obj => obj.group === activeObject);
+        if (bboxObj && bboxObj.label) {
+            document.getElementById('label-input').value = bboxObj.label.text;
+        }
+    } else {
+        document.getElementById('label-input').value = '';
+    }
+    
+    console.log("Selection changed, has selection:", hasSelection);
+}
+
+function onObjectMoving(e) {
+    if (e.target && e.target.type === 'group') {
+        document.getElementById('save-btn').disabled = false;
+        hasUnsavedChanges = true;
+        updateSaveStatus("Có thay đổi chưa lưu", "danger");
+    }
+}
+
+function onObjectScaling(e) {
+    if (e.target && e.target.type === 'group') {
+        document.getElementById('save-btn').disabled = false;
+        hasUnsavedChanges = true;
+        updateSaveStatus("Có thay đổi chưa lưu", "danger");
+    }
+}
+
+function onObjectModified(e) {
+    document.getElementById('save-btn').disabled = false;
+    hasUnsavedChanges = true;
+    updateSaveStatus("Có thay đổi chưa lưu", "danger");
+}
+
+function saveBBoxes() {
+    if (alreadyReviewed) {
+        alert("⚠ Bạn đã duyệt đóng góp này rồi, không thể lưu thay đổi.");
+        return;
+    }
+    
+    if (!confirm("Bạn có chắc muốn lưu các thay đổi?")) {
+        return;
+    }
+    
+    console.log("Saving bounding boxes...");
+    
+    // Collect current bboxes từ canvas
+    const currentBboxes = [];
+    
+    bboxObjects.forEach(bboxObj => {
+        const group = bboxObj.group;
+        
+        if (!group) return;
+        
+        // Lấy vị trí và kích thước group
+        const groupLeft = group.left;
+        const groupTop = group.top;
+        
+        // Lấy kích thước rectangle (đã scale)
+        const rect = bboxObj.rect;
+        const rectWidth = rect.width * (rect.scaleX || 1);
+        const rectHeight = rect.height * (rect.scaleY || 1);
+        
+        // Convert to normalized coordinates [0, 1]
+        const normalizedX = groupLeft / canvas.getWidth();
+        const normalizedY = groupTop / canvas.getHeight();
+        const normalizedWidth = rectWidth / canvas.getWidth();
+        const normalizedHeight = rectHeight / canvas.getHeight();
+        
+        // Lấy label text
+        const labelText = bboxObj.label ? bboxObj.label.text : '';
+        
+        currentBboxes.push({
+            x: normalizedX,
+            y: normalizedY,
+            width: normalizedWidth,
+            height: normalizedHeight,
+            label: labelText,
+            confidence: 1.0
+        });
+        
+        console.log(`BBox ${bboxObj.id}: x=${normalizedX}, y=${normalizedY}, w=${normalizedWidth}, h=${normalizedHeight}`);
+    });
+    
+    // Get CSRF token
+    const csrftoken = getCookie('csrftoken');
+    const distributionId = window.location.pathname.split('/').filter(Boolean).pop();
+    
+    console.log("Sending data to server, distribution ID:", distributionId);
+    
+    // Send to server
+    fetch(`/expert/save-bboxes/${distributionId}/`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrftoken
+        },
+        body: JSON.stringify({ bboxes: currentBboxes })
+    })
+    .then(response => {
+        console.log("Server response status:", response.status);
+        return response.json();
+    })
+    .then(data => {
+        console.log("Server response data:", data);
+        
+        if (data.success) {
+            // Update original bboxes
+            originalBboxes = currentBboxes;
+            
+            // Reset unsaved changes flag
+            hasUnsavedChanges = false;
+            
+            // Update save status
+            updateSaveStatus("Đã lưu thành công!", "success");
+            
+            // Disable edit mode
+            disableEditMode();
+            
+            // Show success message
+            alert("Đã lưu bounding boxes thành công!");
+            
+            // Refresh page after 1 second
+            setTimeout(() => {
+                console.log("Refreshing page...");
+                window.location.reload();
+            }, 1000);
+            
+        } else {
+            throw new Error(data.error || "Unknown error from server");
+        }
+    })
+    .catch(error => {
+        console.error("Save error:", error);
+        alert("Lỗi khi lưu: " + error.message);
+        updateSaveStatus("Lỗi khi lưu: " + error.message, "danger");
+    });
+}
+
+function resetToOriginal() {
+    if (alreadyReviewed) {
+        alert("⚠ Bạn đã duyệt đóng góp này rồi, không thể khôi phục.");
+        return;
+    }
+    
+    if (!confirm("Bạn có chắc muốn khôi phục về trạng thái ban đầu?")) {
+        return;
+    }
+    
+    console.log("Resetting to original bboxes...");
+    
+    // Xóa tất cả bbox groups khỏi canvas
+    bboxObjects.forEach(bboxObj => {
+        canvas.remove(bboxObj.group);
+    });
+    
+    // Xóa bboxObjects
+    bboxObjects = [];
+    
+    // Vẽ lại từ original bboxes
+    originalBboxes.forEach((bbox, index) => {
+        createBBoxGroup(bbox, index);
+    });
+    
+    // Update bbox count
+    document.getElementById('bbox-count').textContent = bboxObjects.length;
+    
+    // Reset unsaved changes flag
+    hasUnsavedChanges = false;
+    
+    // Disable edit mode
+    disableEditMode();
+    
+    // Update save status
+    updateSaveStatus("Đã khôi phục về trạng thái ban đầu", "info");
+    
+    canvas.renderAll();
+    
+    console.log("Reset completed, total bboxes:", bboxObjects.length);
+}
+
+// ==================== UI HELPER FUNCTIONS ====================
+function showError(message) {
+    console.error("Showing error:", message);
+    
+    const errorDiv = document.getElementById('error-message');
+    const errorDetail = document.getElementById('error-detail');
+    
+    if (errorDiv && errorDetail) {
+        errorDetail.textContent = message;
+        errorDiv.classList.remove('d-none');
+    } else {
+        alert("❌ " + message);
+    }
+}
+
+function retryLoadImage() {
+    console.log("Retrying image load...");
+    
+    document.getElementById('error-message').classList.add('d-none');
+    loadImageAndBBoxes();
+}
+
+function updateSaveStatus(message, type = "info") {
+    const statusElement = document.getElementById('save-status');
+    if (!statusElement) return;
+    
+    statusElement.textContent = message;
+    statusElement.className = '';
+    
+    switch(type) {
+        case "success":
+            statusElement.classList.add('text-success');
+            break;
+        case "warning":
+            statusElement.classList.add('text-warning');
+            break;
+        case "danger":
+            statusElement.classList.add('text-danger');
+            break;
+        default:
+            statusElement.classList.add('text-muted');
+    }
+}
+
+function setupFormValidation() {
+    const rejectBtn = document.getElementById('reject-btn');
+    if (rejectBtn) {
+        rejectBtn.addEventListener('click', function(e) {
+            const comment = document.getElementById('comment').value.trim();
+            if (!comment) {
+                e.preventDefault();
+                alert('⚠ Vui lòng nhập lý do từ chối!');
+                document.getElementById('comment').focus();
+            }
+        });
+    }
+}
+
+// ==================== UTILITY FUNCTIONS ====================
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// ==================== BEFORE UNLOAD WARNING ====================
+window.addEventListener('beforeunload', function(e) {
+    if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = 'Bạn có thay đổi chưa lưu. Bạn có chắc muốn rời đi?';
+        return e.returnValue;
+    }
+});
+</script>
+
+<style>
+.image-container {
+    border: 2px solid #ddd;
+    padding: 5px;
+    display: inline-block;
+    background: #f8f9fa;
+    border-radius: 8px;
+    overflow: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-width: 100%;
+}
+
+.canvas-controls {
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.btn-group .btn {
+    margin-right: 5px;
+    margin-bottom: 5px;
+}
+
+.btn-group .btn:last-child {
+    margin-right: 0;
+}
+
+#bbox-canvas {
+    cursor: default;
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #ccc;
+    display: block;
+    margin: 0 auto;
+}
+
+#edit-label-panel {
+    background: #f0f7ff;
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px dashed #4da6ff;
+}
+
+#save-status {
+    font-size: 0.9em;
+    padding: 5px 10px;
+    border-radius: 4px;
+    background: #f8f9fa;
+}
+
+.alert-warning {
+    border-left: 5px solid #ffc107;
+}
+</style>
+{% endblock %}

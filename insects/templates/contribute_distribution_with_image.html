@@ -8,8 +8,14 @@
     <div class="row justify-content-center">
         <div class="col-lg-8">
             <div class="card shadow">
-                <div class="card-header bg-primary text-white">
-                    <h4 class="mb-0"><i class="fas fa-map-marker-alt"></i> Đóng góp vị trí côn trùng</h4>
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h4 class="mb-0">
+                        <i class="fas fa-map-marker-alt"></i> Đóng góp vị trí côn trùng
+                    </h4>
+
+                    <a href="{% url 'my_distribution_history' %}" class="btn btn-light btn-sm">
+                        <i class="fas fa-history"></i> Lịch sử đóng góp
+                    </a>
                 </div>
                 <div class="card-body">
                     <div class="alert alert-info">
@@ -24,7 +30,8 @@
                     
                     <form method="post" enctype="multipart/form-data" id="distributionForm">
                         {% csrf_token %}
-                        
+                        <input type="hidden" name="bbox_data" id="bboxData">
+                                            
                         <!-- Chụp ảnh hoặc tải ảnh -->
                         <div class="mb-4">
                             <h5><i class="fas fa-camera"></i> 1. Chụp hoặc tải ảnh</h5>
@@ -74,7 +81,7 @@
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="mb-3">
-                                        <label class="form-label">Vĩ độ (Latitude)</label>
+                                        <label class="form-label">Vĩ độ</label>
                                         <input type="number" 
                                                step="any" 
                                                class="form-control" 
@@ -86,7 +93,7 @@
                                 </div>
                                 <div class="col-md-6">
                                     <div class="mb-3">
-                                        <label class="form-label">Kinh độ (Longitude)</label>
+                                        <label class="form-label">Kinh độ</label>
                                         <input type="number" 
                                                step="any" 
                                                class="form-control" 
@@ -99,13 +106,19 @@
                             </div>
                             <div class="mb-3">
                                 <button type="button" class="btn btn-info btn-sm" id="getLocationBtn">
-                                    <i class="fas fa-location-crosshairs"></i> Lấy vị trí hiện tại
+                                    <i class="fas fa-location-crosshairs"></i> Vị trí hiện tại
                                 </button>
                                 <small class="text-muted ms-2">(Yêu cầu cho phép truy cập vị trí)</small>
                             </div>
                             <div id="mapPreview" style="height: 200px; border: 1px solid #ddd; border-radius: 5px;"></div>
                         </div>
-                        
+                        <div class="mb-4" id="predictionBox" style="display:none;">
+                            <h5><i class="fas fa-robot"></i> Đề xuất của hệ thống</h5>
+                            <div id="predictionList"></div>
+                            <small class="text-muted">
+                                Chọn loài phù hợp nhất dựa trên ảnh bạn cung cấp
+                            </small>
+                        </div>
                         <!-- Thông tin cơ bản -->
                         <div class="mb-4">
                             <h5><i class="fas fa-info-circle"></i> 3. Thông tin quan sát</h5>
@@ -113,7 +126,8 @@
                                 <div class="col-md-6">
                                     <div class="mb-3">
                                         <label class="form-label">Loài côn trùng *</label>
-                                        <select class="form-select" name="species" required>
+                                        <select class="form-select" name="species" id="speciesSelect" required disabled>
+
                                             <option value="">Chọn loài...</option>
                                             {% for species in species_list %}
                                             <option value="{{ species.insects_id }}">
@@ -282,7 +296,7 @@ document.getElementById('takePhotoBtn').addEventListener('click', function() {
         const file = new File([blob], 'captured_photo.jpg', { type: 'image/jpeg' });
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(file);
-        
+        sendImageForPrediction(file);
         // Tạo input file ẩn và gán file
         const hiddenInput = document.createElement('input');
         hiddenInput.type = 'file';
@@ -324,6 +338,7 @@ document.getElementById('imageUpload').addEventListener('change', function(e) {
         
         // Cố gắng extract GPS từ ảnh nếu có
         extractGPSFromImage(file);
+        sendImageForPrediction(file);
     }
 });
 
@@ -340,5 +355,141 @@ function extractGPSFromImage(file) {
 
 // Khởi tạo khi trang tải xong
 document.addEventListener('DOMContentLoaded', initMapPreview);
+
+function sendImageForPrediction(file) {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    fetch("{% url 'predict_species' %}", {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+    const box = document.getElementById('predictionBox');
+    const list = document.getElementById('predictionList');
+    const select = document.getElementById('speciesSelect');
+    if (data.bboxes && data.bboxes.length > 0) {
+        window.detectedBoxes = data.bboxes;
+    }
+    list.innerHTML = '';
+    select.innerHTML = '<option value="">Chọn loài...</option>';
+
+    box.style.display = 'block';
+
+    /* 1️⃣ Hiển thị ảnh bounding box */
+    if (data.bbox_image) {
+        list.innerHTML += `
+            <div class="mb-3 text-center">
+                <img src="${data.bbox_image}" class="img-fluid rounded border">
+                <small class="text-muted d-block mt-1">
+                    Ảnh đã được nhận dạng
+                </small>
+            </div>
+        `;
+    }
+
+    /* 2️⃣ Fallback nếu AI không chắc */
+    if (data.fallback || !data.predictions || data.predictions.length === 0) {
+        select.disabled = false;
+        list.innerHTML += `
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                AI chưa đủ chắc chắn. Vui lòng chọn loài thủ công bên dưới.
+            </div>
+        `;
+        return;
+    }
+
+    /* 3️⃣ Hiển thị TOP 3 loài + ảnh minh họa */
+    data.predictions.forEach(p => {
+        list.innerHTML += `
+            <div class="card mb-2">
+                <div class="card-body d-flex align-items-center">
+                    ${p.image ? `
+                        <img src="${p.image}"
+                             class="me-3 rounded border"
+                             style="height:80px;width:auto;">
+                    ` : ''}
+
+                    <div>
+                        <div class="form-check">
+                            <input class="form-check-input"
+                                   type="radio"
+                                   name="species_choice"
+                                   onclick="selectSpecies(${p.id})">
+                            <label class="form-check-label">
+                                <b>${p.name}</b><br>
+                                <small><i>${p.scientific_name}</i></small>
+                            </label>
+                        </div>
+
+                        <span class="badge bg-success mt-1">
+                            ${p.confidence}%
+                        </span>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        select.innerHTML += `
+            <option value="${p.id}">
+                ${p.name} (${p.scientific_name})
+            </option>
+        `;
+    });
+
+    select.disabled = false;
+});
+
+}
+
+function selectSpecies(id) {
+    document.getElementById('speciesSelect').value = id;
+}
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('distributionForm');
+    const bboxInput = document.getElementById('bboxData');
+
+    if (!form || !bboxInput) {
+        console.error('❌ Không tìm thấy form hoặc bboxData');
+        return;
+    }
+
+    form.addEventListener('submit', function () {
+
+        if (!window.detectedBoxes || window.detectedBoxes.length === 0) {
+            console.warn('⚠️ Không có bbox để gửi');
+            return;
+        }
+
+        // 👉 LẤY ĐÚNG ẢNH ĐÃ HIỂN THỊ BBOX
+        const img = document.querySelector('#predictionList img');
+        if (!img) {
+            console.error('❌ Không tìm thấy ảnh bbox');
+            return;
+        }
+
+        const imageWidth = img.naturalWidth;
+        const imageHeight = img.naturalHeight;
+
+        // 👉 CHUẨN HÓA DỮ LIỆU GỬI LÊN BACKEND
+        const payload = window.detectedBoxes.map(box => ({
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+            confidence: box.confidence || 1,
+            class: box.class || '',
+            imageWidth: imageWidth,
+            imageHeight: imageHeight
+        }));
+
+        bboxInput.value = JSON.stringify(payload);
+        console.log('✅ bbox gửi lên (CHUẨN):', bboxInput.value);
+    });
+});
+
 </script>
 {% endblock %}

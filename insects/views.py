@@ -7,8 +7,9 @@ import time
 import glob
 from urllib.request import urlopen
 from datetime import datetime, timedelta
+from django.db.models.manager import BaseManager
 from django.utils import timezone
-
+from django.db import transaction
 from itertools import groupby
 
 from pygbif import occurrences
@@ -4003,7 +4004,91 @@ def generate_image_name(species_id):
         return f"IP{int(species_id):03d}{next_id:06d}"
     return f"IP{int(species_id) - 1:03d}{next_id:06d}"
 # ==================================================================================================
+# Thêm function này vào views.py, có thể đặt trước hàm check_missing_images()
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .predict import predict_image
+import os
+from django.core.files.storage import default_storage
 
+@csrf_exempt
+def predict_species_from_image(request):
+    """API nhận diện loài côn trùng từ ảnh"""
+    if request.method == 'POST':
+        try:
+            if 'image' not in request.FILES:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Không tìm thấy ảnh trong yêu cầu'
+                }, status=400)
+            
+            image_file = request.FILES['image']
+            
+            # Lưu file tạm
+            file_path = default_storage.save('tmp/predict_' + image_file.name, image_file)
+            full_file_path = os.path.join(default_storage.base_location, file_path)
+            
+            try:
+                # Gọi hàm predict_image từ predict.py
+                result_img_url, predicted_class_name = predict_image(full_file_path)
+                
+                # Tìm loài côn trùng trong database
+                species = Species.objects.filter(name__icontains=predicted_class_name).first()
+                
+                if species:
+                    response_data = {
+                        'success': True,
+                        'predicted_class': predicted_class_name,
+                        'species': {
+                            'id': species.insects_id,
+                            'name': species.name,
+                            'scientific_name': species.ename,
+                            'slug': species.slug,
+                            'thumbnail': settings.MEDIA_URL + str(species.thumbnail) if species.thumbnail else None
+                        },
+                        'result_image': result_img_url
+                    }
+                else:
+                    response_data = {
+                        'success': True,
+                        'predicted_class': predicted_class_name,
+                        'species': None,
+                        'result_image': result_img_url,
+                        'message': 'Không tìm thấy loài khớp với ảnh trong cơ sở dữ liệu'
+                    }
+                
+                # Xóa file tạm
+                if os.path.exists(full_file_path):
+                    os.remove(full_file_path)
+                    
+                return JsonResponse(response_data)
+                
+            except Exception as e:
+                # Xóa file tạm nếu có lỗi
+                if os.path.exists(full_file_path):
+                    os.remove(full_file_path)
+                    
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Lỗi khi nhận diện ảnh: {str(e)}'
+                }, status=500)
+                
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': f'Lỗi xử lý yêu cầu: {str(e)}'
+            }, status=500)
+    
+    return JsonResponse({
+        'success': False,
+        'error': 'Phương thức không được hỗ trợ'
+    }, status=405)
+
+# Thêm function này nếu chưa có
+def get_image_for_prediction(request):
+    """Lấy ảnh mẫu cho nhận diện"""
+    # Implement logic của bạn ở đây
+    pass
 # Thêm vào cuối views.py và chạy tạm thời
 def check_missing_images():
     from insects.models import InsectsImage
@@ -4065,7 +4150,7 @@ def distribution_map_view(request):
 
     # Chỉ hiển thị điểm đã được duyệt
     distributions = InsectDistribution.objects.filter(
-        status__in=['expert_approved', 'admin_approved']
+        status='admin_approved'
     )
 
     if province_id:
@@ -4083,12 +4168,16 @@ def distribution_map_view(request):
         'selected_species': species_id,
         'MEDIA_URL': settings.MEDIA_URL
     })
-
+import json
+from .models import DistributionBoundingBox
 @login_required
 def contribute_distribution(request):
     """View để người dùng đóng góp vị trí côn trùng"""
     species_list = Species.objects.all()
-    regions = AdministrativeRegion.objects.all()
+    regions = AdministrativeRegion.objects.filter(
+        Q(level='province') | Q(name='Khác')
+    ).order_by('name')
+
     
     if request.method == 'POST':
         try:
@@ -4099,7 +4188,14 @@ def contribute_distribution(request):
             longitude = request.POST['longitude']
             observation_date = request.POST.get('observation_date')
             note = request.POST.get('note', '')
-            
+            bbox_raw = request.POST.get('bbox_data')
+            bboxes = []
+
+            if bbox_raw:
+                try:
+                    bboxes = json.loads(bbox_raw)
+                except json.JSONDecodeError:
+                    bboxes = []
             # Kiểm tra dữ liệu
             if not latitude or not longitude:
                 messages.error(request, "Vui lòng cung cấp tọa độ địa lý!")
@@ -4107,18 +4203,28 @@ def contribute_distribution(request):
                     'species_list': species_list,
                     'regions': regions
                 })
-            
+            with transaction.atomic():
             # Tạo bản ghi phân bố mới
-            distribution = InsectDistribution.objects.create(
-                species_id=species_id,
-                region_id=region_id,
-                latitude=latitude,
-                longitude=longitude,
-                observation_date=observation_date if observation_date else None,
-                note=note,
-                created_by=request.user,
-                status='pending'
-            )
+                distribution = InsectDistribution.objects.create(
+                    species_id=species_id,
+                    region_id=region_id,
+                    latitude=latitude,
+                    longitude=longitude,
+                    observation_date=observation_date if observation_date else None,
+                    note=note,
+                    created_by=request.user,
+                    status='pending'
+                )
+                for box in bboxes:
+                    DistributionBoundingBox.objects.create(
+                        distribution=distribution,
+                        x=box.get('x'),
+                        y=box.get('y'),
+                        width=box.get('width'),
+                        height=box.get('height'),
+                        confidence=box.get('confidence', 0),
+                        label=box.get('class', '')
+                    )
             
             # Gửi email thông báo cho chuyên gia
             try:
@@ -4158,66 +4264,137 @@ def contribute_distribution(request):
         'regions': regions
     })
 
-
 @login_required
 def contribute_distribution_with_image(request):
-    """Đóng góp vị trí kèm ảnh (tích hợp GPS)"""
     species_list = Species.objects.all()
-    regions = AdministrativeRegion.objects.all()
-    
+    regions = AdministrativeRegion.objects.filter(
+        Q(level='province') | Q(name='Khác')
+    ).order_by('name')
+
+
     if request.method == 'POST':
+        if request.user.is_superuser:
+            messages.error(request, "Admin không được đóng góp dữ liệu như người dùng.")
+            return redirect('distribution_map')
         try:
-            # Lấy dữ liệu từ form
-            species_id = request.POST['species']
+            species_id = request.POST.get('species')
             region_id = request.POST.get('region')
             latitude = request.POST.get('latitude')
             longitude = request.POST.get('longitude')
             observation_date = request.POST.get('observation_date')
             note = request.POST.get('note', '')
-            
-            # Xử lý ảnh nếu có
+            '''
             image_file = request.FILES.get('observation_image')
             image_url = None
-            
             if image_file:
-                # Lưu ảnh vào media
-                file_path = default_storage.save(f'observation_images/{image_file.name}', image_file)
-                image_url = file_path
-            
-            # Nếu có GPS từ ảnh nhưng không có tọa độ từ form, sử dụng GPS từ ảnh
-            if not latitude or not longitude:
-                # Có thể thêm logic extract GPS từ ảnh ở đây nếu cần
-                messages.warning(request, "Vui lòng cung cấp tọa độ thủ công hoặc cho phép truy cập vị trí!")
-            
-            # Tạo bản ghi phân bố
+                image_url = default_storage.save(
+                    f'observation_images/{image_file.name}',
+                    image_file
+                )
+
+            # ✅ 1. Tạo distribution trước
             distribution = InsectDistribution.objects.create(
                 species_id=species_id,
-                region_id=region_id,
+                region_id=region_id or None,
                 latitude=latitude,
                 longitude=longitude,
-                observation_date=observation_date if observation_date else None,
+                observation_date=observation_date or None,
                 note=note,
                 observation_image=image_url,
                 created_by=request.user,
                 status='pending'
             )
-            
-            messages.success(request, "Đóng góp vị trí kèm ảnh thành công!")
+            '''
+            image_file = request.FILES.get('observation_image')
+
+            distribution = InsectDistribution.objects.create(
+                species_id=species_id,
+                region_id=region_id or None,
+                latitude=latitude,
+                longitude=longitude,
+                observation_date=observation_date or None,
+                note=note,
+                observation_image=image_file,  # ✅ ĐÚNG CHUẨN DJANGO
+                created_by=request.user,
+                status='pending'
+            )
+
+
+            # ✅ 2. LẤY bbox_data
+            bbox_raw = request.POST.get('bbox_data')
+            if bbox_raw:
+                bboxes = json.loads(bbox_raw)
+
+                for box in bboxes:
+                    '''
+                    DistributionBoundingBox.objects.create(
+                        distribution=distribution,
+                        x=box['x'],
+                        y=box['y'],
+                        width=box['width'],
+                        height=box['height'],
+                        confidence=box.get('confidence'),
+                        label=box.get('class')
+                    )
+                    '''
+                    img = distribution.observation_image
+                    img.open()
+
+                    natural_width = img.width
+                    natural_height = img.height
+
+                    display_width = float(box.get('imageWidth'))
+                    display_height = float(box.get('imageHeight'))
+
+                    scale_x = natural_width / display_width
+                    scale_y = natural_height / display_height
+
+                    DistributionBoundingBox.objects.create(
+                        distribution=distribution,
+                        x=box['x'] * scale_x,
+                        y=box['y'] * scale_y,
+                        width=box['width'] * scale_x,
+                        height=box['height'] * scale_y,
+                        confidence=box.get('confidence', 1),
+                        label=box.get('class', '')
+                    )
+
+            messages.success(request, "Đóng góp thành công!")
             return redirect('distribution_map')
-            
+
         except Exception as e:
-            messages.error(request, f"Lỗi khi đóng góp: {str(e)}")
-    
+            messages.error(request, f"Lỗi: {str(e)}")
+
     return render(request, 'contribute_distribution_with_image.html', {
         'species_list': species_list,
         'regions': regions
     })
-
+import json
+import os
+from PIL import Image
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth.decorators import user_passes_test
+from django.shortcuts import render, get_object_or_404, redirect
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from django.db import transaction
 
 @user_passes_test(lambda u: u.groups.filter(name='CVs').exists())
 def expert_review_distribution(request):
     """Chuyên gia xét duyệt đóng góp phân bố"""
+    # Chỉ lấy các đóng góp chưa được chuyên gia hiện tại duyệt
     distributions = InsectDistribution.objects.filter(status='pending')
+    
+    # Lọc ra những đóng góp mà chuyên gia hiện tại đã duyệt
+    reviewed_ids = DistributionReviewLog.objects.filter(
+        reviewer=request.user,
+        role='expert'
+    ).values_list('distribution_id', flat=True)
+    
+    # Phân loại đóng góp
+    distributions_to_review = distributions.exclude(id__in=reviewed_ids)
+    distributions_reviewed = distributions.filter(id__in=reviewed_ids)
     
     if request.method == 'POST':
         try:
@@ -4231,7 +4408,7 @@ def expert_review_distribution(request):
                 dist.status = 'expert_approved'
                 messages.success(request, f"Đã phê duyệt đóng góp từ {dist.created_by.username}")
             else:
-                dist.status = 'rejected'
+                dist.status = 'expert_rejected'
                 messages.warning(request, f"Đã từ chối đóng góp từ {dist.created_by.username}")
             
             dist.save()
@@ -4248,52 +4425,259 @@ def expert_review_distribution(request):
         except Exception as e:
             messages.error(request, f"Lỗi khi xét duyệt: {str(e)}")
     
-    return render(request, 'expert_review_distribution.html', {
-        'distributions': distributions,
+    context = {
+        'distributions_to_review': distributions_to_review,
+        'distributions_reviewed': distributions_reviewed,
         'MEDIA_URL': settings.MEDIA_URL
-    })
+    }
+    
+    return render(request, 'expert_review_distribution.html', context)
 
-
-@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
-def admin_review_distribution(request):
-    """Admin xét duyệt đóng góp phân bố"""
-    distributions = InsectDistribution.objects.filter(status='expert_approved')
+@user_passes_test(lambda u: u.groups.filter(name='CVs').exists())
+def expert_review_distribution_detail(request, id):
+    """Chi tiết đóng góp phân bố cho chuyên gia xét duyệt"""
+    dist = get_object_or_404(InsectDistribution, id=id)
+    
+    # Lấy bounding boxes từ database
+    bboxes = DistributionBoundingBox.objects.filter(distribution=dist)
+    
+    # Kiểm tra xem chuyên gia hiện tại đã duyệt chưa
+    already_reviewed = DistributionReviewLog.objects.filter(
+        distribution=dist,
+        reviewer=request.user,
+        role='expert'
+    ).exists()
+    
+    # Lấy thông tin duyệt trước đó nếu có
+    previous_review = None
+    if already_reviewed:
+        previous_review = DistributionReviewLog.objects.filter(
+            distribution=dist,
+            reviewer=request.user,
+            role='expert'
+        ).first()
     
     if request.method == 'POST':
-        try:
-            dist = get_object_or_404(
-                InsectDistribution,
-                id=request.POST['distribution_id']
-            )
-            
-            action = request.POST['action']
-            if action == 'approve':
-                dist.status = 'admin_approved'
-                dist.approved_at = timezone.now()
-                messages.success(request, f"Đã phê duyệt cuối cùng đóng góp từ {dist.created_by.username}")
-            else:
-                dist.status = 'rejected'
-                messages.warning(request, f"Đã từ chối đóng góp từ {dist.created_by.username}")
-            
+        # Kiểm tra nếu đã duyệt rồi
+        if already_reviewed:
+            messages.warning(request, "Bạn đã xét duyệt đóng góp này rồi.")
+            return redirect('expert_review_distribution')
+        
+        action = request.POST.get('action')
+        comment = request.POST.get('comment', '').strip()
+        
+        if action == 'reject' and not comment:
+            messages.error(request, "Phải nhập lý do khi từ chối.")
+            return redirect(request.path)
+        
+        # Ghi log xét duyệt
+        DistributionReviewLog.objects.create(
+            distribution=dist,
+            reviewer=request.user,
+            role='expert',
+            action=action,
+            comment=comment
+        )
+        
+        # Đếm số chuyên gia đã phê duyệt
+        approved_count = DistributionReviewLog.objects.filter(
+            distribution=dist,
+            role='expert',
+            action='approve'
+        ).values('reviewer').distinct().count()
+        
+        # Nếu đủ 3 chuyên gia phê duyệt thì chuyển trạng thái
+        if approved_count >= 3:
+            dist.status = 'expert_approved'
             dist.save()
-            
-            # Ghi log xét duyệt
-            DistributionReviewLog.objects.create(
-                distribution=dist,
-                reviewer=request.user,
-                role='admin',
-                action=action,
-                comment=request.POST.get('comment', '')
-            )
-            
-        except Exception as e:
-            messages.error(request, f"Lỗi khi xét duyệt: {str(e)}")
+            messages.success(request, "✅ Đã đủ 3 chuyên gia phê duyệt. Chuyển sang chờ admin xét duyệt.")
+        else:
+            remaining = 3 - approved_count
+            messages.success(request, f"✅ Đã ghi nhận xét duyệt. Cần thêm {remaining} chuyên gia nữa để hoàn thành.")
+        
+        return redirect('expert_review_distribution')
     
-    return render(request, 'admin_review_distribution.html', {
-        'distributions': distributions,
-        'MEDIA_URL': settings.MEDIA_URL
-    })
+    # Xử lý bbox data
+    bbox_data = []
+    img_width = 0
+    img_height = 0
+    
+    if dist.observation_image and hasattr(dist.observation_image, 'url'):
+        try:
+            # Lấy đường dẫn ảnh
+            img_path = dist.observation_image.path if hasattr(dist.observation_image, 'path') else \
+                      os.path.join(settings.MEDIA_ROOT, dist.observation_image.name)
+            
+            # Lấy kích thước ảnh
+            if os.path.exists(img_path):
+                with Image.open(img_path) as img:
+                    img_width, img_height = img.size
+            
+            # Xử lý bounding boxes từ database
+            for bbox in bboxes:
+                try:
+                    # Chuẩn hóa coordinates về [0, 1]
+                    if img_width > 0 and img_height > 0:
+                        # Nếu đã là normalized (< 1), giữ nguyên
+                        if bbox.x < 1 and bbox.y < 1 and bbox.width < 1 and bbox.height < 1:
+                            normalized_x = float(bbox.x)
+                            normalized_y = float(bbox.y)
+                            normalized_width = float(bbox.width)
+                            normalized_height = float(bbox.height)
+                        else:
+                            # Convert pixel to normalized
+                            normalized_x = float(bbox.x) / img_width
+                            normalized_y = float(bbox.y) / img_height
+                            normalized_width = float(bbox.width) / img_width
+                            normalized_height = float(bbox.height) / img_height
+                    else:
+                        # Nếu không có kích thước ảnh, giả sử đã normalized
+                        normalized_x = float(bbox.x)
+                        normalized_y = float(bbox.y)
+                        normalized_width = float(bbox.width)
+                        normalized_height = float(bbox.height)
+                    
+                    # Đảm bảo giá trị trong [0, 1]
+                    normalized_x = max(0, min(1, normalized_x))
+                    normalized_y = max(0, min(1, normalized_y))
+                    normalized_width = max(0, min(1, normalized_width))
+                    normalized_height = max(0, min(1, normalized_height))
+                    
+                    bbox_info = {
+                        'x': normalized_x,
+                        'y': normalized_y,
+                        'width': normalized_width,
+                        'height': normalized_height,
+                        'label': str(bbox.label) if bbox.label else f"BBox {len(bbox_data) + 1}",
+                        'confidence': float(bbox.confidence) if bbox.confidence else 1.0,
+                        'type': 'rect'
+                    }
+                    
+                    bbox_data.append(bbox_info)
+                    
+                except (ValueError, TypeError):
+                    continue
+            
+        except Exception:
+            pass
+    
+    # Xử lý URL ảnh
+    image_url = ''
+    if dist.observation_image and hasattr(dist.observation_image, 'url'):
+        try:
+            image_url = request.build_absolute_uri(dist.observation_image.url)
+        except Exception:
+            image_url = settings.MEDIA_URL + str(dist.observation_image)
+    
+    # Đếm số chuyên gia đã phê duyệt
+    approved_count = DistributionReviewLog.objects.filter(
+        distribution=dist,
+        role='expert',
+        action='approve'
+    ).values('reviewer').distinct().count()
+    
+    # Đếm tổng số chuyên gia đã duyệt (cả approve và reject)
+    total_reviewed = DistributionReviewLog.objects.filter(
+        distribution=dist,
+        role='expert'
+    ).values('reviewer').distinct().count()
+    
+    context = {
+        'distribution': dist,
+        'bboxes_json': json.dumps(bbox_data, ensure_ascii=False) if bbox_data else '[]',
+        'has_image': bool(dist.observation_image),
+        'image_url': image_url,
+        'image_width': img_width,
+        'image_height': img_height,
+        'bbox_count': len(bbox_data),
+        'already_reviewed': already_reviewed,
+        'previous_review': previous_review,
+        'approved_count': approved_count,
+        'total_reviewed': total_reviewed,
+        'remaining_needed': max(0, 3 - approved_count),
+        'MEDIA_URL': settings.MEDIA_URL,
+    }
+    
+    return render(request, 'expert_review_distribution_detail.html', context)
 
+@csrf_exempt
+@user_passes_test(lambda u: u.groups.filter(name='CVs').exists())
+def expert_save_bboxes(request, id):
+    """API để chuyên gia lưu bounding boxes"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=400)
+    
+    try:
+        # Parse JSON data
+        data = json.loads(request.body)
+        bboxes = data.get('bboxes', [])
+        
+        print(f"DEBUG: Saving bboxes for distribution {id}")
+        print(f"DEBUG: Received {len(bboxes)} bboxes")
+        
+        # Get distribution
+        distribution = get_object_or_404(InsectDistribution, id=id)
+        
+        # Kiểm tra xem chuyên gia đã duyệt chưa
+        already_reviewed = DistributionReviewLog.objects.filter(
+            distribution=distribution,
+            reviewer=request.user,
+            role='expert'
+        ).exists()
+        
+        if already_reviewed:
+            return JsonResponse({
+                'error': 'Bạn đã duyệt đóng góp này rồi, không thể chỉnh sửa bounding boxes.'
+            }, status=403)
+        
+        # Delete old bboxes
+        deleted_count, _ = DistributionBoundingBox.objects.filter(distribution=distribution).delete()
+        print(f"DEBUG: Deleted {deleted_count} old bboxes")
+        
+        # Save new bboxes
+        saved_count = 0
+        for bbox in bboxes:
+            # Validate bbox data
+            if 'x' not in bbox or 'y' not in bbox or 'width' not in bbox or 'height' not in bbox:
+                print(f"DEBUG: Skipping invalid bbox: {bbox}")
+                continue
+                
+            DistributionBoundingBox.objects.create(
+                distribution=distribution,
+                x=float(bbox.get('x', 0)),
+                y=float(bbox.get('y', 0)),
+                width=float(bbox.get('width', 0)),
+                height=float(bbox.get('height', 0)),
+                confidence=float(bbox.get('confidence', 1.0)),
+                label=str(bbox.get('label', ''))
+            )
+            saved_count += 1
+        
+        print(f"DEBUG: Saved {saved_count} new bboxes")
+        
+        # Log the edit action
+        DistributionReviewLog.objects.create(
+            distribution=distribution,
+            reviewer=request.user,
+            role='expert',
+            action='edit_bbox',
+            comment=f'Chuyên gia chỉnh sửa {saved_count} bounding box(es)'
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Đã lưu {saved_count} bounding box(es)',
+            'count': saved_count
+        })
+        
+    except json.JSONDecodeError as e:
+        print(f"DEBUG: JSON decode error: {e}")
+        return JsonResponse({'error': 'Invalid JSON data: ' + str(e)}, status=400)
+    except Exception as e:
+        print(f"DEBUG: Error saving bboxes: {e}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': str(e)}, status=500)
 
 @require_GET
 def distribution_map_api(request):
@@ -4309,8 +4693,9 @@ def distribution_map_api(request):
     print(f"API Called with params: species={species_id}, region={region_id}, start_date={start_date}, end_date={end_date}, crop={crop_id}")
     
     # Lấy dữ liệu đã được phê duyệt bởi admin
+    #qs = InsectDistribution.objects.filter(status='admin_approved')
+    #qs = InsectDistribution.objects.all()
     qs = InsectDistribution.objects.filter(status='admin_approved')
-    
     # Debug: In số lượng bản ghi ban đầu
     print(f"Initial queryset count: {qs.count()}")
     
@@ -4374,7 +4759,8 @@ def distribution_map_api(request):
                 'note': d.note or '',
                 'created_by': d.created_by.username if d.created_by else 'Ẩn danh',
                 'created_at': d.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                'observation_image': request.build_absolute_uri(settings.MEDIA_URL + d.observation_image) if d.observation_image else None,
+                'observation_image': request.build_absolute_uri(d.observation_image.url) if d.observation_image else None,
+
             }
             data.append(item)
         except Exception as e:
@@ -4475,7 +4861,7 @@ def insect_damage_detail(request, insects_id):
 
     return render(
         request,
-        'insects/insect_damage_detail.html',
+        'insect_damage_detail.html',
         {
             'species': species,
             'damages': damages
@@ -4504,7 +4890,10 @@ def get_regions_api(request):
         return JsonResponse([], safe=False)
 
     if level == 'country':
-        qs = AdministrativeRegion.objects.filter(id=vn.id)
+        qs = AdministrativeRegion.objects.filter(
+            level='country',
+            name__in=['Việt Nam', 'Khác']
+        )
 
     elif level == 'province':
         qs = AdministrativeRegion.objects.filter(
@@ -4617,11 +5006,261 @@ def add_sample_distribution_data():
     except Exception as e:
         print(f"Lỗi khi thêm dữ liệu mẫu: {e}")
 
+@login_required
+def my_distribution_history(request):
+    distributions = (
+        InsectDistribution.objects
+        .filter(created_by=request.user)
+        .prefetch_related('review_logs', 'review_logs__reviewer')
+        .order_by('-created_at')
+    )
 
+    return render(request, 'my_distribution_history.html', {
+        'distributions': distributions
+    })
 # =========================================CÂY TRỒNG BỊ HẠI=========================================================
-from django.shortcuts import render, get_object_or_404
-from .models import Crop, InsectCropDamage
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib import messages
+from django.http import JsonResponse
+from django.db import transaction
+import json
 
+from .models import Crop, Species, InsectCropDamage
+
+def is_expert(user):
+    return user.groups.filter(name="CVs").exists() or user.is_superuser
+
+@login_required
+@user_passes_test(is_expert)
+def expert_manage_crop(request):
+    """
+    Trang quản lý cây trồng và mối quan hệ gây hại với côn trùng
+    """
+    crops = Crop.objects.all().order_by("name")
+    species_list = Species.objects.all().order_by("ename")
+    
+    # Lấy tất cả mối quan hệ gây hại (bao gồm cả pending)
+    damages = (
+        InsectCropDamage.objects
+        .select_related("crop", "species", "created_by")
+        .order_by("-created_at")
+    )
+    
+    # Thêm thống kê cho chuyên gia xem
+    stats = {
+        'total': damages.count(),
+        'pending': damages.filter(status='pending').count(),
+        'expert_approved': damages.filter(status='expert_approved').count(),
+        'admin_approved': damages.filter(status='admin_approved').count(),
+        'rejected': damages.filter(status='rejected').count(),
+    }
+    
+    context = {
+        "crops": crops,
+        "species_list": species_list,
+        "damages": damages,
+        "stats": stats,  # Thêm stats vào context
+        'MEDIA_URL': settings.MEDIA_URL
+    }
+    
+    return render(request, "expert_manage_crop.html", context)
+
+@login_required
+@user_passes_test(is_expert)
+def expert_add_crop(request):
+    """API thêm cây trồng mới"""
+    if request.method == "POST":
+        try:
+            name = request.POST.get("name")
+            scientific_name = request.POST.get("scientific_name", "")
+            description = request.POST.get("description", "")
+            economic_value = request.POST.get("economic_value", "")
+            morphology = request.POST.get("morphology", "")
+            cultivation_area = request.POST.get("cultivation_area", "")
+            
+            if not name:
+                return JsonResponse({"success": False, "error": "Tên cây trồng là bắt buộc"})
+            
+            crop = Crop.objects.create(
+                name=name,
+                scientific_name=scientific_name,
+                description=description,
+                economic_value=economic_value,
+                morphology=morphology,
+                cultivation_area=cultivation_area
+            )
+            
+            return JsonResponse({
+                "success": True,
+                "message": "Đã thêm cây trồng thành công",
+                "crop": {
+                    "id": crop.id,
+                    "name": crop.name,
+                    "scientific_name": crop.scientific_name
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)})
+    
+    return JsonResponse({"success": False, "error": "Invalid method"})
+
+@login_required
+@user_passes_test(is_expert)
+def expert_edit_crop(request, crop_id):
+    """API sửa cây trồng"""
+    if request.method == "POST":
+        try:
+            crop = get_object_or_404(Crop, id=crop_id)
+            
+            crop.name = request.POST.get("name", crop.name)
+            crop.scientific_name = request.POST.get("scientific_name", crop.scientific_name)
+            crop.description = request.POST.get("description", crop.description)
+            crop.economic_value = request.POST.get("economic_value", crop.economic_value)
+            crop.morphology = request.POST.get("morphology", crop.morphology)
+            crop.cultivation_area = request.POST.get("cultivation_area", crop.cultivation_area)
+            
+            crop.save()
+            
+            return JsonResponse({
+                "success": True,
+                "message": "Đã cập nhật cây trồng thành công",
+                "crop": {
+                    "id": crop.id,
+                    "name": crop.name,
+                    "scientific_name": crop.scientific_name
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)})
+    
+    return JsonResponse({"success": False, "error": "Invalid method"})
+
+@login_required
+@user_passes_test(is_expert)
+def expert_delete_crop(request, crop_id):
+    """API xóa cây trồng"""
+    if request.method == "POST":
+        try:
+            crop = get_object_or_404(Crop, id=crop_id)
+            
+            # Kiểm tra xem cây trồng có mối quan hệ gây hại không
+            if InsectCropDamage.objects.filter(crop=crop).exists():
+                return JsonResponse({
+                    "success": False, 
+                    "error": "Không thể xóa cây trồng vì có mối quan hệ gây hại tồn tại"
+                })
+            
+            crop.delete()
+            
+            return JsonResponse({
+                "success": True,
+                "message": "Đã xóa cây trồng thành công"
+            })
+            
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)})
+    
+    return JsonResponse({"success": False, "error": "Invalid method"})
+
+@login_required
+@user_passes_test(is_expert)
+def expert_add_damage(request):
+    """API thêm mối quan hệ gây hại"""
+    if request.method == "POST":
+        try:
+            crop_id = request.POST.get("crop_id")
+            species_id = request.POST.get("species_id")
+            damage_level = request.POST.get("damage_level")
+            description = request.POST.get("description", "")
+            
+            if not all([crop_id, species_id, damage_level]):
+                return JsonResponse({"success": False, "error": "Vui lòng điền đầy đủ thông tin bắt buộc"})
+            
+            # Kiểm tra xem mối quan hệ đã tồn tại chưa
+            if InsectCropDamage.objects.filter(crop_id=crop_id, species_id=species_id).exists():
+                return JsonResponse({
+                    "success": False, 
+                    "error": "Mối quan hệ gây hại này đã tồn tại"
+                })
+            
+            damage = InsectCropDamage.objects.create(
+                crop_id=crop_id,
+                species_id=species_id,
+                damage_level=damage_level,
+                description=description,
+                created_by=request.user,
+                status="pending"  # <-- SỬA THÀNH 'pending' ĐỂ ADMIN DUYỆT
+            )
+            
+            return JsonResponse({
+                "success": True,
+                "message": "Đã thêm mối quan hệ gây hại thành công. Vui lòng chờ admin duyệt.",
+                "damage": {
+                    "id": damage.id,
+                    "crop_name": damage.crop.name,
+                    "species_name": damage.species.ename,
+                    "damage_level": damage.get_damage_level_display(),
+                    "description": damage.description,
+                    "created_by": damage.created_by.username,
+                    "created_at": damage.created_at.strftime("%d/%m/%Y %H:%M"),
+                    "status": "pending"  # <-- SỬA THÀNH 'pending'
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)})
+    
+    return JsonResponse({"success": False, "error": "Invalid method"})
+
+@login_required
+@user_passes_test(is_expert)
+def expert_edit_damage(request, damage_id):
+    """API sửa mối quan hệ gây hại"""
+    if request.method == "POST":
+        try:
+            damage = get_object_or_404(InsectCropDamage, id=damage_id)
+            
+            damage.damage_level = request.POST.get("damage_level", damage.damage_level)
+            damage.description = request.POST.get("description", damage.description)
+            
+            damage.save()
+            
+            return JsonResponse({
+                "success": True,
+                "message": "Đã cập nhật mối quan hệ gây hại thành công",
+                "damage": {
+                    "id": damage.id,
+                    "damage_level": damage.get_damage_level_display(),
+                    "description": damage.description
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)})
+    
+    return JsonResponse({"success": False, "error": "Invalid method"})
+
+@login_required
+@user_passes_test(is_expert)
+def expert_delete_damage(request, damage_id):
+    """API xóa mối quan hệ gây hại"""
+    if request.method == "POST":
+        try:
+            damage = get_object_or_404(InsectCropDamage, id=damage_id)
+            damage.delete()
+            
+            return JsonResponse({
+                "success": True,
+                "message": "Đã xóa mối quan hệ gây hại thành công"
+            })
+            
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)})
+    
+    return JsonResponse({"success": False, "error": "Invalid method"})
 
 def crop_detail(request, crop_id):
     """
@@ -4641,7 +5280,774 @@ def crop_detail(request, crop_id):
 
     context = {
         'crop': crop,
-        'damages': damages
+        'damages': damages,
+        'MEDIA_URL': settings.MEDIA_URL
     }
 
     return render(request, 'crop_detail.html', context)
+# ==================== ADMIN DUYỆT CÂY TRỒNG ====================
+
+# Thêm các import cần thiết
+import threading
+from django.db import transaction
+from django.db.models import Count
+import time
+
+# Cache đơn giản dùng dictionary (in-memory)
+_admin_cache = {
+    'stats': None,
+    'stats_timestamp': 0,
+    'cache_duration': 30  # 30 giây
+}
+
+# ==================== ADMIN DUYỆT CÂY TRỒNG ====================
+@login_required
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_manage_crops(request):
+    current_time = time.time()
+
+    # ===== 1. CACHE CHỈ CHO STATS =====
+    if (
+        _admin_cache['stats'] is None or
+        current_time - _admin_cache['stats_timestamp'] > _admin_cache['cache_duration']
+    ):
+        stats = {
+            'total_crops': Crop.objects.count(),
+            'pending_crops': Crop.objects.count(),
+            'pending_damages': InsectCropDamage.objects.filter(status='pending').count(),
+            'expert_approved_damages': InsectCropDamage.objects.filter(status='expert_approved').count(),
+            'admin_approved_damages': InsectCropDamage.objects.filter(status='admin_approved').count(),
+        }
+        _admin_cache['stats'] = stats
+        _admin_cache['stats_timestamp'] = current_time
+    else:
+        stats = _admin_cache['stats']
+
+    # ===== 2. LUÔN LUÔN LẤY QUERYSET MỚI =====
+    pending_crops = Crop.objects.all().prefetch_related('insectcropdamage_set')
+
+    pending_damages = InsectCropDamage.objects.filter(
+        status='pending'
+    ).select_related('crop', 'species', 'created_by').order_by('-created_at')
+
+    approved_damages = InsectCropDamage.objects.filter(
+        status='admin_approved'
+    ).select_related('crop', 'species').order_by('-created_at')
+
+    return render(request, 'admin_manage_crops.html', {
+        'pending_crops': pending_crops,
+        'pending_damages': pending_damages,
+        'approved_damages': approved_damages,
+        'stats': stats,
+        'MEDIA_URL': settings.MEDIA_URL
+    })
+
+# Hàm gửi email trong thread riêng để không block
+def send_email_async(subject, message, from_email, recipient_list):
+    """Gửi email bất đồng bộ"""
+    try:
+        send_mail(subject, message, from_email, recipient_list, fail_silently=True)
+    except Exception as e:
+        print(f"Error sending email in background: {e}")
+
+@login_required
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_approve_damage(request, damage_id):
+    """Admin chấp nhận mối quan hệ gây hại - TỐI ƯU TỐC ĐỘ"""
+    if request.method == 'POST':
+        start_time = time.time()
+        
+        try:
+            # Lấy object với tối ưu query
+            damage = InsectCropDamage.objects.select_related(
+                'crop', 'species', 'created_by'
+            ).get(id=damage_id)
+            
+            action = request.POST.get('action')
+            reason = request.POST.get('reason', 'Không có lý do cụ thể')
+            
+            if action == 'approve':
+                # Cập nhật trực tiếp, không cần transaction nếu chỉ 1 field
+                InsectCropDamage.objects.filter(id=damage_id).update(status='admin_approved')
+                
+                # Gửi email trong background (không block)
+                if damage.created_by.email:
+                    email_thread = threading.Thread(
+                        target=send_email_async,
+                        args=(
+                            "Thông báo: Mối quan hệ gây hại của bạn đã được duyệt",
+                            f"Xin chào {damage.created_by.username},\n\nMối quan hệ gây hại bạn đóng góp đã được admin chấp nhận.\n• Cây trồng: {damage.crop.name}\n• Côn trùng: {damage.species.name}\n• Mức độ: {damage.get_damage_level_display()}\n• Thời gian: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}\n\nTrân trọng,\nHệ thống quản lý côn trùng",
+                            "no-reply@yourdomain.com",
+                            [damage.created_by.email]
+                        )
+                    )
+                    email_thread.daemon = True
+                    email_thread.start()
+                
+                messages.success(request, f"Đã chấp nhận mối quan hệ gây hại {damage_id}")
+                
+            elif action == 'reject':
+                # Cập nhật trực tiếp
+                InsectCropDamage.objects.filter(id=damage_id).update(status='rejected')
+                
+                # Gửi email trong background
+                if damage.created_by.email:
+                    email_thread = threading.Thread(
+                        target=send_email_async,
+                        args=(
+                            "Thông báo: Mối quan hệ gây hại của bạn đã bị từ chối",
+                            f"Xin chào {damage.created_by.username},\n\nRất tiếc, mối quan hệ gây hại bạn đóng góp đã bị từ chối.\n• Cây trồng: {damage.crop.name}\n• Côn trùng: {damage.species.name}\n• Lý do: {reason}\n• Thời gian: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}\n\nTrân trọng,\nHệ thống quản lý côn trùng",
+                            "no-reply@yourdomain.com",
+                            [damage.created_by.email]
+                        )
+                    )
+                    email_thread.daemon = True
+                    email_thread.start()
+                
+                messages.warning(request, f"Đã từ chối mối quan hệ gây hại {damage_id}")
+            
+            # Xóa cache thống kê
+            _admin_cache['stats'] = None
+            
+            print(f"DEBUG: Duyệt xong trong {time.time() - start_time:.3f} giây")
+            
+            # Redirect nhanh
+            return redirect('admin_manage_crops')
+                
+        except InsectCropDamage.DoesNotExist:
+            messages.error(request, "Không tìm thấy mối quan hệ gây hại")
+        except Exception as e:
+            messages.error(request, f"Lỗi: {str(e)[:100]}")
+    
+    return redirect('admin_manage_crops')
+
+
+@login_required
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_approve_crop(request, crop_id):
+    """Admin chấp nhận/xóa cây trồng """
+    if request.method == 'POST':
+        try:
+            action = request.POST.get('action')
+            
+            if action == 'delete':
+                # Xóa trực tiếp bằng ID (nhanh hơn)
+                deleted_count, _ = Crop.objects.filter(id=crop_id).delete()
+                
+                if deleted_count > 0:
+                    messages.success(request, f"Đã xóa cây trồng")
+                    # Xóa cache thống kê
+                    _admin_cache['stats'] = None
+                else:
+                    messages.warning(request, "Không tìm thấy cây trồng để xóa")
+            
+            # Redirect ngay lập tức
+            return redirect('admin_manage_crops')
+                
+        except Exception as e:
+            messages.error(request, f"Lỗi: {str(e)[:100]}")
+    
+    return redirect('admin_manage_crops')
+
+@login_required
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_damage_detail(request, damage_id):
+    damage = get_object_or_404(
+        InsectCropDamage.objects.select_related('crop', 'species', 'created_by'),
+        id=damage_id,
+        status='admin_approved'
+    )
+
+    return render(request, 'admin_damage_detail.html', {
+        'damage': damage
+    })
+@login_required
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_delete_damage(request, damage_id):
+    if request.method == 'POST':
+        damage = get_object_or_404(
+            InsectCropDamage,
+            id=damage_id,
+            status='admin_approved'
+        )
+        damage.delete()
+
+        # Xóa cache stats
+        _admin_cache['stats'] = None
+
+        messages.success(request, "Đã xóa mối quan hệ gây hại")
+    
+    return redirect('admin_manage_crops')
+#=============================== Chấp nhận vị trí=======================
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_review_distribution(request):
+    """Admin xét duyệt đóng góp phân bố - Trang danh sách"""
+    # Lấy các tham số tìm kiếm
+    species_id = request.GET.get('species', '')
+    region_id = request.GET.get('region', '')
+    status_filter = request.GET.get('status', 'expert_approved')
+    search_query = request.GET.get('search', '')
+    
+    # Lấy danh sách phân bố theo filter
+    distributions = InsectDistribution.objects.select_related('species', 'region', 'created_by')
+    
+    # Áp dụng bộ lọc
+    if status_filter:
+        distributions = distributions.filter(status=status_filter)
+    
+    if species_id:
+        distributions = distributions.filter(species_id=species_id)
+    
+    if region_id:
+        distributions = distributions.filter(region_id=region_id)
+    
+    if search_query:
+        distributions = distributions.filter(
+            Q(species__name__icontains=search_query) |
+            Q(species__ename__icontains=search_query) |
+            Q(region__name__icontains=search_query) |
+            Q(note__icontains=search_query) |
+            Q(created_by__username__icontains=search_query)
+        )
+    
+    # Lấy danh sách loài và khu vực cho dropdown filter
+    species_list = Species.objects.all().order_by('name')
+    regions = AdministrativeRegion.objects.filter(level='province').order_by('name')
+    
+    # Phân trang
+    paginator = Paginator(distributions, 20)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    # Thống kê
+    stats = {
+        'pending': InsectDistribution.objects.filter(status='pending').count(),
+        'expert_approved': InsectDistribution.objects.filter(status='expert_approved').count(),
+        'admin_approved': InsectDistribution.objects.filter(status='admin_approved').count(),
+        'rejected': InsectDistribution.objects.filter(status='rejected').count(),
+        'with_image': InsectDistribution.objects.filter(observation_image__isnull=False).count(),
+    }
+    
+    # Xử lý POST request để duyệt/từ chối trực tiếp từ danh sách
+    if request.method == 'POST':
+        try:
+            dist = get_object_or_404(
+                InsectDistribution,
+                id=request.POST['distribution_id']
+            )
+            
+            action = request.POST['action']
+            comment = request.POST.get('comment', '')
+            
+            if action == 'approve':
+                dist.status = 'admin_approved'
+                dist.approved_at = timezone.now()
+                dist.save()
+                
+                # Gửi email thông báo
+                try:
+                    if dist.created_by.email:
+                        subject = "Thông báo: Vị trí phân bố của bạn đã được chấp nhận"
+                        message = (
+                            f"Xin chào {dist.created_by.username},\n\n"
+                            f"- Vị trí phân bố bạn đóng góp đã được admin chấp nhận.\n"
+                            f"- Loài: {dist.species.name}\n"
+                            f"- Tọa độ: {dist.latitude}, {dist.longitude}\n"
+                            f"- Khu vực: {dist.region.name if dist.region else 'Không xác định'}\n"
+                            f"- Thời gian phê duyệt: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}\n\n"
+                            f"Vị trí này sẽ được hiển thị trên bản đồ phân bố.\n\n"
+                            f"Trân trọng,\nHệ thống quản lý côn trùng"
+                        )
+                        from_email = "no-reply@yourdomain.com"
+                        send_mail(subject, message, from_email, [dist.created_by.email], fail_silently=True)
+                except Exception as e:
+                    print(f"Error sending email: {e}")
+                
+                messages.success(request, f"Đã chấp nhận vị trí #{dist.id} từ {dist.created_by.username}")
+                
+            elif action == 'reject':
+                dist.status = 'rejected'
+                dist.save()
+                
+                # Gửi email thông báo từ chối
+                try:
+                    if dist.created_by.email:
+                        subject = "Thông báo: Vị trí phân bố của bạn đã bị từ chối"
+                        message = (
+                            f"Xin chào {dist.created_by.username},\n\n"
+                            f"- Rất tiếc, vị trí phân bố bạn đóng góp đã bị từ chối.\n"
+                            f"- Loài: {dist.species.name}\n"
+                            f"- Tọa độ: {dist.latitude}, {dist.longitude}\n"
+                            f"- Lý do: {comment}\n"
+                            f"- Thời gian: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}\n\n"
+                            f"Trân trọng,\nHệ thống quản lý côn trùng"
+                        )
+                        from_email = "no-reply@yourdomain.com"
+                        send_mail(subject, message, from_email, [dist.created_by.email], fail_silently=True)
+                except Exception as e:
+                    print(f"Error sending email: {e}")
+                
+                messages.warning(request, f"Đã từ chối vị trí #{dist.id}")
+            
+            # Ghi log xét duyệt
+            DistributionReviewLog.objects.create(
+                distribution=dist,
+                reviewer=request.user,
+                role='admin',
+                action=action,
+                comment=comment
+            )
+            
+        except Exception as e:
+            messages.error(request, f"Lỗi khi xét duyệt: {str(e)}")
+        
+        return redirect(request.path)
+    
+    return render(request, 'admin_review_distribution.html', {
+        'page_obj': page_obj,
+        'distributions': page_obj,
+        'species_list': species_list,
+        'regions': regions,
+        'selected_species': species_id,
+        'selected_region': region_id,
+        'selected_status': status_filter,
+        'search_query': search_query,
+        'stats': stats,
+        'MEDIA_URL': settings.MEDIA_URL
+    })
+
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_review_distribution_detail(request, id):
+    """Admin xét duyệt chi tiết một vị trí phân bố"""
+    distribution = get_object_or_404(InsectDistribution, id=id)
+    bboxes = DistributionBoundingBox.objects.filter(distribution=distribution)
+    
+    # Kiểm tra xem admin đã duyệt chưa
+    already_reviewed = DistributionReviewLog.objects.filter(
+        distribution=distribution,
+        reviewer=request.user,
+        role='admin'
+    ).exists()
+    
+    # Lấy lịch sử xét duyệt
+    review_logs = DistributionReviewLog.objects.filter(
+        distribution=distribution
+    ).select_related('reviewer').order_by('created_at')
+    
+    # Xử lý POST request
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        comment = request.POST.get('comment', '').strip()
+        
+        if action == 'reject' and not comment:
+            messages.error(request, "Phải nhập lý do khi từ chối.")
+            return redirect(request.path)
+        
+        if already_reviewed:
+            messages.warning(request, "Bạn đã xét duyệt vị trí này rồi.")
+            return redirect('admin_review_distribution')
+        
+        # Lưu log xét duyệt
+        DistributionReviewLog.objects.create(
+            distribution=distribution,
+            reviewer=request.user,
+            role='admin',
+            action=action,
+            comment=comment
+        )
+        
+        if action == 'approve':
+            distribution.status = 'admin_approved'
+            distribution.approved_at = timezone.now()
+            distribution.save()
+            
+            # Gửi email thông báo
+            try:
+                if distribution.created_by.email:
+                    subject = "Thông báo: Vị trí phân bố của bạn đã được chấp nhận"
+                    message = (
+                        f"Xin chào {distribution.created_by.username},\n\n"
+                        f"- Vị trí phân bố bạn đóng góp đã được admin chấp nhận.\n"
+                        f"- Loài: {distribution.species.name}\n"
+                        f"- Tọa độ: {distribution.latitude}, {distribution.longitude}\n"
+                        f"- Khu vực: {distribution.region.name if distribution.region else 'Không xác định'}\n"
+                        f"- Thời gian phê duyệt: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}\n\n"
+                        f"Vị trí này sẽ được hiển thị trên bản đồ phân bố.\n\n"
+                        f"Trân trọng,\nHệ thống quản lý côn trùng"
+                    )
+                    from_email = "no-reply@yourdomain.com"
+                    send_mail(subject, message, from_email, [distribution.created_by.email], fail_silently=True)
+            except Exception as e:
+                print(f"Error sending email: {e}")
+            
+            messages.success(request, "Đã chấp nhận vị trí phân bố!")
+            return redirect('admin_review_distribution')
+            
+        else:
+            distribution.status = 'rejected'
+            distribution.save()
+            
+            # Gửi email thông báo từ chối
+            try:
+                if distribution.created_by.email:
+                    subject = "Thông báo: Vị trí phân bố của bạn đã bị từ chối"
+                    message = (
+                        f"Xin chào {distribution.created_by.username},\n\n"
+                        f"- Rất tiếc, vị trí phân bố bạn đóng góp đã bị từ chối.\n"
+                        f"- Loài: {distribution.species.name}\n"
+                        f"- Tọa độ: {distribution.latitude}, {distribution.longitude}\n"
+                        f"- Lý do: {comment}\n"
+                        f"- Thời gian: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}\n\n"
+                        f"Trân trọng,\nHệ thống quản lý côn trùng"
+                    )
+                    from_email = "no-reply@yourdomain.com"
+                    send_mail(subject, message, from_email, [distribution.created_by.email], fail_silently=True)
+            except Exception as e:
+                print(f"Error sending email: {e}")
+            
+            messages.error(request, "Đã từ chối vị trí phân bố!")
+            return redirect('admin_review_distribution')
+    
+    # Xử lý bbox data cho template
+    bbox_data = []
+    img_width = 0
+    img_height = 0
+    
+    if distribution.observation_image:
+        try:
+            img_path = os.path.join(settings.MEDIA_ROOT, distribution.observation_image.name)
+            if os.path.exists(img_path):
+                with Image.open(img_path) as img:
+                    img_width, img_height = img.size
+                    
+                    for bbox in bboxes:
+                        try:
+                            if bbox.x < 1 and bbox.y < 1 and bbox.width < 1 and bbox.height < 1:
+                                normalized_x = float(bbox.x)
+                                normalized_y = float(bbox.y)
+                                normalized_width = float(bbox.width)
+                                normalized_height = float(bbox.height)
+                            else:
+                                normalized_x = float(bbox.x) / img_width
+                                normalized_y = float(bbox.y) / img_height
+                                normalized_width = float(bbox.width) / img_width
+                                normalized_height = float(bbox.height) / img_height
+                            
+                            bbox_data.append({
+                                'x': normalized_x,
+                                'y': normalized_y,
+                                'width': normalized_width,
+                                'height': normalized_height,
+                                'label': str(bbox.label) if bbox.label else '',
+                                'confidence': float(bbox.confidence) if bbox.confidence else 0.0,
+                            })
+                        except (ValueError, TypeError):
+                            continue
+        except Exception as e:
+            print(f"Error processing image: {e}")
+    
+    context = {
+        'distribution': distribution,
+        'bboxes_json': json.dumps(bbox_data, ensure_ascii=False),
+        'has_image': bool(distribution.observation_image),
+        
+        'image_url': request.build_absolute_uri(distribution.observation_image.url) if distribution.observation_image else '',
+        'image_width': img_width,
+        'image_height': img_height,
+        'review_logs': review_logs,
+        'already_reviewed': already_reviewed,
+        #'species_scientific_name': distribution.species.ename,
+        'MEDIA_URL': settings.MEDIA_URL,
+    }
+    
+    return render(request, 'admin_review_distribution_detail.html', context)
+
+
+@csrf_exempt
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_save_distribution(request, id):
+    """API để admin lưu bounding boxes"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=400)
+    
+    try:
+        data = json.loads(request.body)
+        bboxes = data.get('bboxes', [])
+        
+        distribution = get_object_or_404(InsectDistribution, id=id)
+        
+        # Xóa bboxes cũ
+        DistributionBoundingBox.objects.filter(distribution=distribution).delete()
+        
+        # Lưu bboxes mới
+        for bbox in bboxes:
+            DistributionBoundingBox.objects.create(
+                distribution=distribution,
+                x=bbox.get('x', 0),
+                y=bbox.get('y', 0),
+                width=bbox.get('width', 0),
+                height=bbox.get('height', 0),
+                confidence=bbox.get('confidence', 0),
+                label=bbox.get('label', '')
+            )
+        
+        # Ghi log
+        DistributionReviewLog.objects.create(
+            distribution=distribution,
+            reviewer=request.user,
+            role='admin',
+            action='edit_bbox',
+            comment='Admin chỉnh sửa bounding box'
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Đã lưu {len(bboxes)} bounding box(es)',
+            'count': len(bboxes)
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON data'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+from django.contrib.auth.decorators import user_passes_test
+from django.contrib import messages
+from django.shortcuts import render, redirect, get_object_or_404
+from django.core.paginator import Paginator
+from django.db.models import Q, Count
+from django.utils import timezone
+from django.core.mail import send_mail
+from django.conf import settings
+from .models import InsectDistribution, Species, AdministrativeRegion
+# ========== QUẢN LÝ VỊ TRÍ ĐÃ DUYỆT ==========
+
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_manage_approved_locations(request):
+    """Trang quản lý tất cả vị trí đã được admin duyệt"""
+    
+    # Lấy tất cả vị trí đã được admin duyệt
+    locations = InsectDistribution.objects.filter(status='admin_approved')
+    
+    # Lấy danh sách loài và khu vực cho filter - SỬA: AdministrativeRegion
+    species_list = Species.objects.all().order_by('name')
+    region_list = AdministrativeRegion.objects.all().order_by('name')
+    
+    # Xử lý tìm kiếm và filter
+    search_query = request.GET.get('search', '')
+    species_id = request.GET.get('species', '')
+    region_id = request.GET.get('region', '')
+    date_from = request.GET.get('date_from', '')
+    date_to = request.GET.get('date_to', '')
+    
+    # Áp dụng bộ lọc
+    if search_query:
+        locations = locations.filter(
+            Q(species__name__icontains=search_query) |
+            Q(species__ename__icontains=search_query) |
+            Q(species__eng_name__icontains=search_query) |
+            Q(region__name__icontains=search_query) |
+            Q(created_by__username__icontains=search_query) |
+            Q(note__icontains=search_query)
+        )
+    
+    if species_id and species_id != 'all':
+        locations = locations.filter(species_id=species_id)
+    
+    if region_id and region_id != 'all':
+        locations = locations.filter(region_id=region_id)
+    
+    if date_from:
+        try:
+            locations = locations.filter(created_at__date__gte=date_from)
+        except:
+            pass
+    
+    if date_to:
+        try:
+            locations = locations.filter(created_at__date__lte=date_to)
+        except:
+            pass
+    
+    # Thống kê
+    total_count = locations.count()
+    today_count = locations.filter(created_at__date=timezone.now().date()).count()
+    species_stats = locations.values('species__name', 'species__eng_name').annotate(
+        count=Count('id')
+    ).order_by('-count')[:10]
+    
+    # Phân trang
+    paginator = Paginator(locations.order_by('-created_at'), 20)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    
+    context = {
+        'page_obj': page_obj,
+        'species_list': species_list,
+        'region_list': region_list,
+        'search_query': search_query,
+        'selected_species': species_id,
+        'selected_region': region_id,
+        'date_from': date_from,
+        'date_to': date_to,
+        'total_count': total_count,
+        'today_count': today_count,
+        'species_stats': species_stats,
+    }
+    
+    return render(request, 'admin_manage_approved_locations.html', context)
+
+@user_passes_test(lambda u: u.is_superuser or u.groups.filter(name='Admins').exists())
+def admin_delete_approved_location(request, id):
+    """Admin xóa vị trí đã được duyệt"""
+    if request.method == 'POST':
+        location = get_object_or_404(InsectDistribution, id=id, status='admin_approved')
+        
+        # Lưu thông tin để gửi email thông báo
+        user_email = location.created_by.email if location.created_by.email else None
+        species_name = location.species.name
+        coordinates = f"{location.latitude}, {location.longitude}"
+        reason = request.POST.get('reason', 'Vi phạm quy định hệ thống')
+        
+        # Gửi email thông báo trước khi xóa
+        if user_email:
+            try:
+                subject = "Thông báo: Vị trí phân bố của bạn đã bị xóa"
+                message = (
+                    f"Xin chào {location.created_by.username},\n\n"
+                    f"Thông báo quan trọng về vị trí phân bố bạn đã đóng góp:\n\n"
+                    f"• Loài: {species_name}\n"
+                    f"• Tọa độ: {coordinates}\n"
+                    f"• Ngày đóng góp: {location.created_at.strftime('%d/%m/%Y')}\n"
+                    f"• Lý do xóa: {reason}\n"
+                    f"• Thời gian xóa: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}\n\n"
+                    f"Lưu ý: Vị trí này đã bị xóa vĩnh viễn khỏi hệ thống và sẽ không hiển thị trên bản đồ phân bố nữa.\n\n"
+                    f"Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ với quản trị viên.\n\n"
+                    f"Trân trọng,\nHệ thống quản lý côn trùng"
+                )
+                from_email = settings.DEFAULT_FROM_EMAIL
+                send_mail(subject, message, from_email, [user_email], fail_silently=True)
+            except Exception as e:
+                print(f"Error sending email: {e}")
+        
+        # Ghi log trước khi xóa (nếu có model SystemLog)
+        try:
+            from .models import SystemLog
+            SystemLog.objects.create(
+                user=request.user,
+                action='delete_location',
+                details=f"Deleted location #{id} - {species_name} at {coordinates}. Reason: {reason}"
+            )
+        except:
+            pass  # Bỏ qua nếu không có model SystemLog
+        
+        # Xóa vị trí
+        location.delete()
+        
+        messages.success(request, f"Đã xóa vị trí #{id} thành công! Đã gửi email thông báo cho người đóng góp.")
+        return redirect('admin_manage_approved_locations')
+    
+    messages.error(request, "Phương thức không hợp lệ!")
+    return redirect('admin_manage_approved_locations')
+#=============================== quản lý vị trí -CV=======================
+@login_required
+def expert_manage_distribution(request):
+    
+    #Trang quản lý vị trí côn trùng đơn giản
+    
+    # Kiểm tra quyền (CVs hoặc Admin)
+    if not (request.user.groups.filter(name='CVs').exists() or request.user.is_superuser):
+        return redirect('home')
+    
+    # Lấy dữ liệu
+    species_list = Species.objects.all().order_by('name')
+    regions = AdministrativeRegion.objects.all()
+    
+    selected_species_id = request.GET.get('species', '')
+    distributions = InsectDistribution.objects.select_related('species', 'region')
+    
+    if selected_species_id:
+        distributions = distributions.filter(species_id=selected_species_id)
+    
+    # Đếm số vị trí có ảnh
+    distributions_with_image = distributions.filter(observation_image__isnull=False).count()
+    
+    # Xử lý POST requests
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        add_type = request.POST.get('add_type', 'manual')  # Lấy loại thêm
+        
+        if action == 'add':
+            # Thêm mới
+            try:
+                if add_type == 'image':
+                    # THÊM TỪ ẢNH - CÓ UPLOAD FILE
+                    distribution = InsectDistribution(
+                        species_id=request.POST.get('species_id'),
+                        latitude=request.POST.get('latitude'),
+                        longitude=request.POST.get('longitude'),
+                        region_id=request.POST.get('region_id') or None,
+                        note=request.POST.get('note', ''),
+                        created_by=request.user,
+                        status='expert_approved',  # Để expert_approved cho form từ ảnh
+                        observation_image=request.FILES.get('observation_image'),  # QUAN TRỌNG: Lấy file
+                        gps_from_image=True  # Đánh dấu GPS từ ảnh
+                    )
+                    distribution.save()
+                    messages.success(request, 'Đã thêm vị trí từ ảnh thành công!')
+                    
+                else:
+                    # THÊM THỦ CÔNG
+                    distribution = InsectDistribution.objects.create(
+                        species_id=request.POST.get('species_id'),
+                        latitude=request.POST.get('latitude'),
+                        longitude=request.POST.get('longitude'),
+                        region_id=request.POST.get('region_id') or None,
+                        note=request.POST.get('note', ''),
+                        created_by=request.user,
+                        status='admin_approved'  # Thủ công thì admin_approved
+                    )
+                    messages.success(request, 'Đã thêm vị trí mới!')
+                    
+            except Exception as e:
+                messages.error(request, f'Lỗi: {str(e)}')
+                print(f"Lỗi khi thêm vị trí: {e}")  # Debug
+                
+        elif action == 'update':
+            # Cập nhật
+            try:
+                distribution = InsectDistribution.objects.get(
+                    id=request.POST.get('distribution_id')
+                )
+                distribution.latitude = request.POST.get('latitude')
+                distribution.longitude = request.POST.get('longitude')
+                distribution.region_id = request.POST.get('region_id') or None
+                distribution.note = request.POST.get('note', '')
+                distribution.save()
+                messages.success(request, 'Đã cập nhật vị trí!')
+            except Exception as e:
+                messages.error(request, f'Lỗi: {str(e)}')
+                
+        elif action == 'delete':
+            # Xóa
+            try:
+                distribution = InsectDistribution.objects.get(
+                    id=request.POST.get('distribution_id')
+                )
+                distribution.delete()
+                messages.success(request, 'Đã xóa vị trí!')
+            except Exception as e:
+                messages.error(request, f'Lỗi: {str(e)}')
+        
+        return redirect(f"{request.path}?species={selected_species_id}")
+    
+    context = {
+        'species_list': species_list,
+        'regions': regions,
+        'distributions': distributions,
+        'selected_species_id': selected_species_id,
+        'distributions_with_image': distributions_with_image,  # Thêm số lượng có ảnh
+        'MEDIA_URL': settings.MEDIA_URL
+    }
+    
+    return render(request, 'expert_manage_distribution.html', context)

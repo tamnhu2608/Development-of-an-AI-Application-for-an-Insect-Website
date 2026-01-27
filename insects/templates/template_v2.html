@@ -36,6 +36,8 @@
     <!-- Template Stylesheet -->
     <link href="{% static 'css/style.css' %}" rel="stylesheet">
 
+    
+
     {% block extra_css %}{% endblock %}
 
 </head>
@@ -135,7 +137,7 @@
                                         <a href="/add_desc/" style="text-decoration: none; color: black;">Đóng góp mô tả ảnh côn trùng</a>
                                     </li>
                                     <li class="dropdown-item">
-                                        <a href="" style="text-decoration: none; color: black;">Đóng góp vị trí côn trùng</a>
+                                        <a href="/contribute-distribution-image/" style="text-decoration: none; color: black;">Đóng góp vị trí côn trùng</a>
                                     </li>
                                 </ul>
                             </li>
@@ -156,7 +158,7 @@
                                         <a href="/cv_desc_verify/" style="text-decoration: none; color: black;">Xét duyệt đóng góp mô tả ảnh côn trùng</a>
                                     </li>
                                      <li class="dropdown-item">
-                                        <a href="/cv_desc_verify/" style="text-decoration: none; color: black;">Xét duyệt đóng góp vị trí côn trùng</a>
+                                        <a href="/expert-review-distribution/" style="text-decoration: none; color: black;">Xét duyệt đóng góp vị trí côn trùng</a>
                                     </li>
                                 </ul>
                             </li>
@@ -177,7 +179,7 @@
                                         <a href="/admin_desc_verify/" style="text-decoration: none; color: black;">Chấp nhận đóng góp mô tả ảnh côn trùng</a>
                                     </li>
                                     <li class="dropdown-item">
-                                        <a href="" style="text-decoration: none; color: black;">Chấp nhận đóng góp vị trí côn trùng</a>
+                                        <a href="/admin_review_distribution/" style="text-decoration: none; color: black;">Chấp nhận đóng góp vị trí côn trùng</a>
                                     </li>
                                 </ul>
                             </li>
@@ -208,8 +210,13 @@
                                         </a>
                                     </li>
                                     <li class="dropdown-item">
-                                        <a href="" style="text-decoration: none; color: black;">
+                                        <a href="/expert_manage_distribution/" style="text-decoration: none; color: black;">
                                             Quản lý vị trí côn trùng
+                                        </a>
+                                    </li>
+                                    <li class="dropdown-item">
+                                        <a href="/expert_manage_crop/" style="text-decoration: none; color: black;">
+                                            Quản lý cây trồng 
                                         </a>
                                     </li>
                                     {% elif request.user|has_group:"Admins" %}
@@ -221,6 +228,16 @@
                                     <li class="dropdown-item">
                                         <a href="/manage_user/" style="text-decoration: none; color: black;">
                                             Quản lý người dùng
+                                        </a>
+                                    </li>
+                                    <li class="dropdown-item">
+                                        <a href="/admin_manage_approved_locations/" style="text-decoration: none; color: black;">
+                                            Quản lý vị trí
+                                        </a>
+                                    </li>
+                                    <li class="dropdown-item">
+                                        <a href="/admin_manage_crops/" style="text-decoration: none; color: black;">
+                                            Quản lý cây trồng
                                         </a>
                                     </li>
                                     <li><hr class="dropdown-divider"></li>
