@@ -167,7 +167,7 @@ urlpatterns = [
     # detect_by_img
     path('detect_insect/', views.detect, name='detect_insect'),
   
-
+ # ========== BẢN ĐỒ PHÂN BỐ==========
     path('distribution-map/', views.distribution_map_view, name='distribution_map'),
     path('contribute-distribution/', views.contribute_distribution, name='contribute_distribution'),
     path('contribute-distribution-image/', views.contribute_distribution_with_image, name='contribute_distribution_with_image'),
@@ -180,7 +180,38 @@ urlpatterns = [
     path('crop-damage/<int:crop_id>/', views.crop_damage_detail, name='crop_damage_detail'),
     path('insect-damage/<int:insects_id>/', views.insect_damage_detail, name='insect_damage_detail'),
     path('contribute-crop-damage/', views.contribute_crop_damage, name='contribute_crop_damage'),
-
+    path('crop/<int:crop_id>/', views.crop_detail, name='crop_detail'),
+    #path('api/predict-species/', views.predict_species_from_image, name='predict_species'),
+    path('my-distribution-history/', views.my_distribution_history,name='my_distribution_history'),
+    path('expert-review-distribution/<int:id>/', views.expert_review_distribution_detail, name='expert_review_distribution_detail'),
+    path('expert-review-distribution/<int:id>/save-bbox/',views.expert_save_bboxes,name='expert_save_bboxes'),
+    path('expert/review-distribution/', views.expert_review_distribution, name='expert_review_distribution'),
+    path('expert/review-distribution/<int:id>/', views.expert_review_distribution_detail, name='expert_review_distribution_detail'),
+    path('expert/save-bboxes/<int:id>/', views.expert_save_bboxes, name='expert_save_bboxes'),
+    
+ # ========== QUẢN LÝ VỊ TRÍ CÔN TRÙNG - CHUYÊN GIA ==========
+   
+   path('expert_manage_distribution/', views.expert_manage_distribution, name='expert_manage_distribution'),
+ # ========== QUẢN LÝ VỊ TRÍ CÔN TRÙNG - QUẢN TRỊ VIÊN ==========
+   path('admin_review_distribution/', views.admin_review_distribution, name='admin_review_distribution'),
+   path('admin_review_distribution/<int:id>/', views.admin_review_distribution_detail, name='admin_review_distribution_detail'),
+   path('admin_save_distribution/<int:id>/', views.admin_save_distribution, name='admin_save_distribution'),
+   path('admin_manage_approved_locations/', views.admin_manage_approved_locations, name='admin_manage_approved_locations'),
+   path('admin_delete_approved_location/<int:id>/', views.admin_delete_approved_location, name='admin_delete_approved_location'),
+# ========== QUẢN LÝ CÔN TRÙNG ==========
+    path('expert_manage_crop/',views.expert_manage_crop,name='expert_manage_crop'),
+  
+    path('expert/add-crop/', views.expert_add_crop, name='expert_add_crop'),
+    path('expert/edit-crop/<int:crop_id>/', views.expert_edit_crop, name='expert_edit_crop'),
+    path('expert/delete-crop/<int:crop_id>/', views.expert_delete_crop, name='expert_delete_crop'),
+    path('expert/add-damage/', views.expert_add_damage, name='expert_add_damage'),
+    path('expert/edit-damage/<int:damage_id>/', views.expert_edit_damage, name='expert_edit_damage'),
+    path('expert/delete-damage/<int:damage_id>/', views.expert_delete_damage, name='expert_delete_damage'),
+# ========== ADMIN DUYỆT CÂY TRỒNG ==========
+    path('admin_manage_crops/', views.admin_manage_crops, name='admin_manage_crops'),
+    path('admin_approve_damage/<int:damage_id>/', views.admin_approve_damage, name='admin_approve_damage'),
+    path('admin_approve_crop/<int:crop_id>/', views.admin_approve_crop, name='admin_approve_crop'),
+    path('admin_delete_damage/<int:damage_id>/', views.admin_delete_damage, name='admin_delete_damage'),
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

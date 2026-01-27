@@ -1,0 +1,70 @@
+{% extends "template_v2.html" %}
+
+{% block title %}Lịch sử đóng góp{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <h3 class="mb-4">
+        <i class="fas fa-history"></i> Lịch sử đóng góp của tôi
+    </h3>
+
+    {% if distributions %}
+        {% for d in distributions %}
+        <div class="card mb-3 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <b>{{ d.species.name }}</b>
+                        <div class="text-muted small">
+                            {{ d.created_at|date:"d/m/Y H:i" }}
+                        </div>
+                    </div>
+
+                    <span class="badge
+                        {% if d.status == 'pending' %} bg-warning
+                        {% elif d.status == 'expert_approved' %} bg-info
+                        {% elif d.status == 'admin_approved' %} bg-success
+                        {% else %} bg-danger {% endif %}">
+                        {{ d.get_status_display }}
+                    </span>
+                </div>
+
+                {% if d.note %}
+                <p class="mt-2 mb-1"><i class="fas fa-note-sticky"></i> {{ d.note }}</p>
+                {% endif %}
+
+                {% if d.review_logs.all %}
+                <hr>
+                <h6><i class="fas fa-user-check"></i> Lịch sử xét duyệt</h6>
+                <ul class="list-unstyled mb-0">
+                    {% for log in d.review_logs.all %}
+                    <li class="mb-2">
+                        <b>{{ log.reviewer.username }}</b>
+                        ({{ log.get_role_display }}) —
+                        <span class="
+                            {% if log.action == 'approve' %} text-success
+                            {% else %} text-danger {% endif %}">
+                            {{ log.get_action_display }}
+                        </span>
+                        <div class="small text-muted">
+                            {{ log.created_at|date:"d/m/Y H:i" }}
+                        </div>
+                        {% if log.comment %}
+                        <div class="alert alert-secondary mt-1 p-2">
+                            <i class="fas fa-comment"></i> {{ log.comment }}
+                        </div>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="alert alert-info">
+            Bạn chưa có đóng góp nào.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

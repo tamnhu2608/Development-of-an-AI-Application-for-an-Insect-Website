@@ -1,0 +1,226 @@
+{% extends "template_v2.html" %}
+{% load static %}
+
+{% block title %}Xét duyệt phân bố - Chuyên gia{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item active">Xét duyệt phân bố</li>
+        </ol>
+    </nav>
+    
+    <!-- Tab navigation -->
+    <ul class="nav nav-tabs mb-4" id="reviewTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending" type="button" role="tab">
+                <i class="fas fa-clock"></i> Cần duyệt
+                <span class="badge bg-danger ms-1">{{ distributions_to_review.count }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="reviewed-tab" data-bs-toggle="tab" data-bs-target="#reviewed" type="button" role="tab">
+                <i class="fas fa-history"></i> Đã duyệt
+                <span class="badge bg-info ms-1">{{ distributions_reviewed.count }}</span>
+            </button>
+        </li>
+    </ul>
+    
+    <!-- Tab content -->
+    <div class="tab-content" id="reviewTabsContent">
+        <!-- Tab 1: Cần duyệt -->
+        <div class="tab-pane fade show active" id="pending" role="tabpanel">
+            {% if distributions_to_review %}
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-clipboard-list"></i> Đóng góp cần xét duyệt</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Loài</th>
+                                    <th>Tên khoa học</th>
+                                    <th>Khu vực</th>
+                                    <th>Người gửi</th>
+                                    <th>Ngày gửi</th>
+                                    <th>Trạng thái</th>
+                                    <th>Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for dist in distributions_to_review %}
+                                <tr>
+                                    <td>#{{ dist.id }}</td>
+                                    <td>{{ dist.species.name }}</td>
+                                    <td><em>{{ dist.species.ename }}</em></td>
+                                    <td>{{ dist.region.name|default:"Không xác định" }}</td>
+                                    <td>{{ dist.created_by.username }}</td>
+                                    <td>{{ dist.created_at|date:"d/m/Y H:i" }}</td>
+                                    <td>
+                                        {% if dist.status == 'pending' %}
+                                            <span class="badge bg-warning">Chờ duyệt</span>
+                                        {% elif dist.status == 'expert_approved' %}
+                                            <span class="badge bg-success">Đã đủ chuyên gia</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ dist.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'expert_review_distribution_detail' dist.id %}" 
+                                           class="btn btn-sm btn-primary">
+                                            <i class="fas fa-clipboard-check"></i> Xét duyệt
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-info text-center py-5">
+                <i class="fas fa-check-circle fa-3x mb-3 text-info"></i>
+                <h4>Không có đóng góp nào cần xét duyệt</h4>
+                <p class="mb-0">Tất cả đóng góp đã được xét duyệt hoặc bạn đã duyệt hết.</p>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Tab 2: Đã duyệt -->
+        <div class="tab-pane fade" id="reviewed" role="tabpanel">
+            {% if distributions_reviewed %}
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-history"></i> Đóng góp bạn đã duyệt</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Loài</th>
+                                    <th>Tên khoa học</th>
+                                    <th>Khu vực</th>
+                                    <th>Ngày gửi</th>
+                                    <th>Kết quả duyệt của bạn</th>
+                                    <th>Trạng thái chung</th>
+                                    <th>Hành động</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for dist in distributions_reviewed %}
+                                <tr>
+                                    <td>#{{ dist.id }}</td>
+                                    <td>{{ dist.species.name }}</td>
+                                    <td><em>{{ dist.species.ename }}</em></td>
+                                    <td>{{ dist.region.name|default:"Không xác định" }}</td>
+                                    <td>{{ dist.created_at|date:"d/m/Y H:i" }}</td>
+                                    <td>
+                                        {% comment %} Lấy kết quả duyệt của user hiện tại {% endcomment %}
+                                        {% with dist.review_logs.all as logs %}
+                                            {% for log in logs %}
+                                                {% if log.reviewer == request.user %}
+                                                    {% if log.action == 'approve' %}
+                                                        <span class="badge bg-success">Đã phê duyệt</span>
+                                                    {% elif log.action == 'reject' %}
+                                                        <span class="badge bg-danger">Đã từ chối</span>
+                                                    {% elif log.action == 'edit_bbox' %}
+                                                        <span class="badge bg-warning">Đã chỉnh sửa BBox</span>
+                                                    {% else %}
+                                                        <span class="badge bg-secondary">{{ log.action }}</span>
+                                                    {% endif %}
+                                                {% endif %}
+                                            {% endfor %}
+                                        {% endwith %}
+                                    </td>
+                                    <td>
+                                        {% if dist.status == 'pending' %}
+                                            <span class="badge bg-warning">Chờ chuyên gia khác</span>
+                                        {% elif dist.status == 'expert_approved' %}
+                                            <span class="badge bg-success">Đã đủ chuyên gia</span>
+                                        {% elif dist.status == 'expert_rejected' %}
+                                            <span class="badge bg-danger">Chuyên gia từ chối</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ dist.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'expert_review_distribution_detail' dist.id %}" 
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-eye"></i> Xem lại
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-info text-center py-5">
+                <i class="fas fa-history fa-3x mb-3 text-info"></i>
+                <h4>Chưa có đóng góp nào được duyệt</h4>
+                <p class="mb-0">Bạn chưa xét duyệt đóng góp nào.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+.nav-tabs .nav-link {
+    font-weight: 500;
+}
+
+.nav-tabs .nav-link.active {
+    font-weight: 600;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.badge {
+    font-size: 0.85em;
+    padding: 0.4em 0.6em;
+}
+</style>
+
+<script>
+// Khởi tạo tab khi trang tải
+document.addEventListener('DOMContentLoaded', function() {
+    // Kiểm tra nếu có tab active trong URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeTab = urlParams.get('tab');
+    
+    if (activeTab === 'reviewed') {
+        const reviewedTab = new bootstrap.Tab(document.getElementById('reviewed-tab'));
+        reviewedTab.show();
+    }
+});
+
+// Lưu tab active vào URL khi chuyển tab
+document.getElementById('reviewed-tab').addEventListener('shown.bs.tab', function() {
+    updateUrl('reviewed');
+});
+
+document.getElementById('pending-tab').addEventListener('shown.bs.tab', function() {
+    updateUrl('pending');
+});
+
+function updateUrl(tabName) {
+    const url = new URL(window.location);
+    url.searchParams.set('tab', tabName);
+    window.history.replaceState({}, '', url);
+}
+</script>
+{% endblock %}

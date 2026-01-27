@@ -7,21 +7,33 @@ Cây trồng: {{ crop.name }}
 {% block content %}
 <div class="container py-4">
 
-    <h3 class="mb-3">
-        🌱 {{ crop.name }}
-        {% if crop.scientific_name %}
-            <small class="text-muted">({{ crop.scientific_name }})</small>
-        {% endif %}
-    </h3>
+    <!-- Tên cây trồng căn giữa -->
+    <div class="text-center mb-4">
+        <h2 class="fw-bold">
+            {{ crop.name }}
+            {% if crop.scientific_name %}
+                <small class="text-muted">({{ crop.scientific_name }})</small>
+            {% endif %}
+        </h2>
+        
+    </div>
 
-    {% if crop.description %}
-    <p class="text-muted">{{ crop.description }}</p>
-    {% endif %}
+    <!-- Khối thông tin chi tiết cây trồng -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h5 class="fw-bold mb-3 text-success">Thông tin chi tiết cây trồng</h5>
+            
+            <p><strong>Tên cây:</strong> {{ crop.name }}</p>
+            <p><strong>Tên khoa học:</strong> {{ crop.scientific_name|default:"Chưa cập nhật" }}</p>
+            <p><strong>Mô tả:</strong> {{ crop.description|default:"Chưa cập nhật thông tin." }}</p>
+            <p><strong>Giá trị kinh tế:</strong> {{ crop.economic_value|default:"Chưa cập nhật thông tin." }}</p>
+            <p><strong>Đặc điểm hình thái:</strong> {{ crop.morphology|default:"Chưa cập nhật thông tin." }}</p>
+            <p><strong>Vùng trồng phổ biến:</strong> {{ crop.cultivation_area|default:"Chưa cập nhật thông tin." }}</p>
+        </div>
+    </div>
 
-    <hr>
-
-    <h5 class="mb-3">🐛 Danh sách côn trùng gây hại</h5>
-
+    <!-- Danh sách côn trùng gây hại -->
+    <h5 class="mb-3">Danh sách côn trùng gây hại</h5>
     {% if damages %}
         <div class="table-responsive">
             <table class="table table-bordered table-hover align-middle">
@@ -38,9 +50,7 @@ Cây trồng: {{ crop.name }}
                     <tr>
                         <td>
                             <strong>{{ d.species.name }}</strong><br>
-                            <small class="text-muted">
-                                {{ d.species.scientific_name }}
-                            </small>
+                            <small class="text-muted">{{ d.species.scientific_name }}</small>
                         </td>
                         <td>
                             {% if d.damage_level == 'low' %}
@@ -51,13 +61,12 @@ Cây trồng: {{ crop.name }}
                                 <span class="badge bg-danger">Nặng</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="text-dark">
                             {{ d.description|default:"—" }}
                         </td>
                         <td class="text-center">
-                            <a href="{% url 'detail' d.species.slug %}"
-                               class="btn btn-sm btn-outline-primary"
-                               target="_blank">
+                            <a href="{% url 'detail' d.species.slug %}" 
+                                class="btn btn-sm btn-outline-primary" >
                                 Xem loài
                             </a>
                         </td>
